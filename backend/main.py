@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BoolTox Plugin Backend for uiautodev
-启动 uiautodev 本地服务，BoolTox 将在系统浏览器中打开
+BoolTox Plugin Backend for byteautoui
+启动 byteautoui 本地服务，BoolTox 将在系统浏览器中打开
 使用本地源代码，无需从 PyPI 安装
 """
 
@@ -14,9 +14,9 @@ import sys
 import time
 from pathlib import Path
 
-# 将本地 uiautodev 源代码添加到 Python 路径
+# 将本地 byteautoui 源代码添加到 Python 路径
 PLUGIN_DIR = Path(__file__).parent.parent
-UIAUTODEV_SRC = PLUGIN_DIR / "uiautodev"
+UIAUTODEV_SRC = PLUGIN_DIR / "byteautoui"
 if UIAUTODEV_SRC.exists():
     sys.path.insert(0, str(PLUGIN_DIR))
 
@@ -52,7 +52,7 @@ def start_uiautodev_server():
             sys.exit(1)
 
         # 使用本地源代码启动 uiautodev server
-        uiautodev_main = plugin_dir / "uiautodev" / "__main__.py"
+        uiautodev_main = plugin_dir / "byteautoui" / "__main__.py"
 
         # 构建启动命令（无需 --offline，现在使用静态文件服务）
         cmd = [

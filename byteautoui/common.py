@@ -12,7 +12,7 @@ from typing import List, Optional
 
 from PIL import Image
 
-from uiautodev.model import Node, OCRNode
+from byteautoui.model import Node, OCRNode
 
 logger = logging.getLogger(__name__)
 

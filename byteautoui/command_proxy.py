@@ -13,13 +13,13 @@ from typing import Callable, Dict, List, Optional, Union
 from lxml import etree
 from pydantic import BaseModel
 
-from uiautodev.command_types import AppLaunchRequest, AppTerminateRequest, By, Command, CurrentAppResponse, \
+from byteautoui.command_types import AppLaunchRequest, AppTerminateRequest, By, Command, CurrentAppResponse, \
     DumpResponse, FindElementRequest, FindElementResponse, InstallAppRequest, InstallAppResponse, SendKeysRequest, \
     SwipeRequest, TapRequest, WindowSizeResponse
-from uiautodev.driver.base_driver import BaseDriver
-from uiautodev.exceptions import ElementNotFoundError
-from uiautodev.model import AppInfo, Node
-from uiautodev.utils.common import node_travel
+from byteautoui.driver.base_driver import BaseDriver
+from byteautoui.exceptions import ElementNotFoundError
+from byteautoui.model import AppInfo, Node
+from byteautoui.utils.common import node_travel
 
 COMMANDS: Dict[Command, Callable] = {}
 

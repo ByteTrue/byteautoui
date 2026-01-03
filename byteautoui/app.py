@@ -20,18 +20,18 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect
 
-from uiautodev import __version__
-from uiautodev.common import convert_bytes_to_image, get_webpage_url, ocr_image
-from uiautodev.driver.android import ADBAndroidDriver, U2AndroidDriver
-from uiautodev.model import Node
-from uiautodev.provider import AndroidProvider, HarmonyProvider, IOSProvider
-from uiautodev.remote.scrcpy import ScrcpyServer
-from uiautodev.router.android import router as android_device_router
-from uiautodev.router.device import make_router
-# from uiautodev.router.proxy import router as proxy_router  # 不再需要代理路由
-from uiautodev.router.recording import router as recording_router
-from uiautodev.router.xml import router as xml_router
-from uiautodev.utils.envutils import Environment
+from byteautoui import __version__
+from byteautoui.common import convert_bytes_to_image, get_webpage_url, ocr_image
+from byteautoui.driver.android import ADBAndroidDriver, U2AndroidDriver
+from byteautoui.model import Node
+from byteautoui.provider import AndroidProvider, HarmonyProvider, IOSProvider
+from byteautoui.remote.scrcpy import ScrcpyServer
+from byteautoui.router.android import router as android_device_router
+from byteautoui.router.device import make_router
+# from byteautoui.router.proxy import router as proxy_router  # 不再需要代理路由
+from byteautoui.router.recording import router as recording_router
+from byteautoui.router.xml import router as xml_router
+from byteautoui.utils.envutils import Environment
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ app.include_router(recording_router, prefix="/api", tags=["recording"])
 # app.include_router(proxy_router, tags=["proxy"])  # 不再需要代理路由
 
 # 本地 mock API（替代远程 api.uiauto.dev）
-@app.get("/api/pypi/uiautodev/latest-version")
+@app.get("/api/pypi/byteautoui/latest-version")
 async def mock_pypi_version():
     """Mock PyPI 版本检查（本地化）"""
     return {"version": "0.0.0", "message": "本地化版本"}
@@ -191,7 +191,7 @@ async def handle_android_scrcpy3_ws(websocket: WebSocket, serial: str):
     try:
         logger.info(f"WebSocket serial: {serial}")
         device = adbutils.device(serial)
-        from uiautodev.remote.scrcpy3 import ScrcpyServer3
+        from byteautoui.remote.scrcpy3 import ScrcpyServer3
         scrcpy = ScrcpyServer3(device)
         try:
             await scrcpy.stream_to_websocket(websocket)
@@ -233,7 +233,7 @@ async def handle_android_ws(websocket: WebSocket, serial: str):
 def get_harmony_mjpeg_server(serial: str):
     from hypium import UiDriver
 
-    from uiautodev.remote.harmony_mjpeg import HarmonyMjpegServer
+    from byteautoui.remote.harmony_mjpeg import HarmonyMjpegServer
 
     driver = UiDriver.connect(device_sn=serial)
     logger.info("create harmony mjpeg server for %s", serial)
@@ -260,7 +260,7 @@ async def unified_harmony_ws(websocket: WebSocket, serial: str):
     except ImportError as e:
         logger.error(f"missing library for harmony: {e}")
         await websocket.close(
-            code=1000, reason='missing library, fix by "pip install uiautodev[harmony]"'
+            code=1000, reason='missing library, fix by "pip install byteautoui[harmony]"'
         )
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected by client.")
@@ -272,4 +272,4 @@ async def unified_harmony_ws(websocket: WebSocket, serial: str):
 
 
 if __name__ == "__main__":
-    uvicorn.run("uiautodev.app:app", port=4000, reload=True, use_colors=True)
+    uvicorn.run("byteautoui.app:app", port=4000, reload=True, use_colors=True)

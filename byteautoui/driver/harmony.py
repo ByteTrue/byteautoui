@@ -14,9 +14,9 @@ from typing import Dict, List, Optional, Tuple, Union, final
 
 from PIL import Image
 
-from uiautodev.command_types import CurrentAppResponse
-from uiautodev.driver.base_driver import BaseDriver
-from uiautodev.model import AppInfo, Node, Rect, ShellResponse, WindowSize
+from byteautoui.command_types import CurrentAppResponse
+from byteautoui.driver.base_driver import BaseDriver
+from byteautoui.model import AppInfo, Node, Rect, ShellResponse, WindowSize
 
 logger = logging.getLogger(__name__)
 

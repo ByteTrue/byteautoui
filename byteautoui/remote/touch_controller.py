@@ -4,8 +4,8 @@ import struct
 
 from construct import Byte, Int16ub, Int32ub, Int64ub, Struct
 
-from uiautodev.remote.android_input import KeyeventAction, MetaState
-from uiautodev.remote.keycode import KeyCode
+from byteautoui.remote.android_input import KeyeventAction, MetaState
+from byteautoui.remote.keycode import KeyCode
 
 
 # https://github.com/Genymobile/scrcpy/blob/master/app/src/control_msg.h#L29

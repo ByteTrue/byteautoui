@@ -1,13 +1,13 @@
-# UI Auto Dev 工具
+# ByteAutoUI
 
-移动端 UI 自动化检查工具，支持 Android/iOS/Harmony 设备的 UI 层级检查、元素定位、XPath 生成等功能。
+移动端 UI 自动化检查工具（基于 [uiautodev](https://github.com/codeskyblue/uiautodev) 深度定制），支持 Android/iOS/Harmony 设备的 UI 层级检查、元素定位、XPath 生成等功能。
 
 ## 特性
 
 - ✅ **完全本地化**：使用静态文件服务，无需网络即可运行
 - ✅ **完全掌控前端**：所有前端资源可自由修改（`static/` 目录）
 - ✅ **架构简化**：使用标准 FastAPI StaticFiles（减少 150+ 行代码）
-- ✅ **离线运行**：内置 uiautodev 源代码（14MB），无需依赖 PyPI 服务器
+- ✅ **离线运行**：内置 byteautoui 源代码（14MB），无需依赖 PyPI 服务器
 - ✅ **二次开发友好**：源代码可见可改，便于定制功能
 - ✅ **版本锁定**：避免上游更新导致的兼容性问题
 - ✅ **完整功能**：支持 Android/iOS/Harmony 设备的 UI 自动化
@@ -16,12 +16,12 @@
 
 ### 通过 BoolTox 启动（推荐）
 
-在 BoolTox 客户端中点击 "uiautodev" 工具即可启动。
+在 BoolTox 客户端中点击 "ByteAutoUI" 工具即可启动。
 
 ### 手动启动（开发/测试）
 
 ```bash
-cd packages/client/tools/uiautodev
+cd byteautoui
 python backend/main.py
 ```
 
@@ -56,7 +56,7 @@ cp my-logo.webp static/assets/logo.webp
 ## 目录结构
 
 ```
-uiautodev/
+byteautoui/
 ├── static/                         ← 前端资源（完全掌控）
 │   ├── index.html                  ← 可自由编辑
 │   ├── favicon.ico
@@ -64,7 +64,7 @@ uiautodev/
 │       ├── index-9353aa21.js       ← 主程序（1 MB）
 │       ├── index-3ba1a158.css      ← 样式（278 KB）
 │       └── ...
-├── uiautodev/                      ← Python 后端
+├── byteautoui/                      ← Python 后端
 │   ├── app.py                      ← FastAPI 应用（已简化）
 │   ├── driver/                     ← 设备驱动
 │   └── router/                     ← API 路由
@@ -116,18 +116,18 @@ lsof -ti:20242 | xargs kill -9
 ✅ **完全掌控**：可自由修改前端
 ✅ **架构简化**：减少 150+ 行代码
 
-**现在 uiautodev 是一个真正属于你的工具！** 🎯
+**现在 ByteAutoUI 是一个真正属于你的工具！** 🎯
 
 ## 目录结构
 
 ```
-com.booltox.uiautodev/
+com.booltox.byteautoui/
 ├── manifest.json          # 工具配置文件
-├── requirements.txt       # Python 依赖（仅核心库，不含 uiautodev）
+├── requirements.txt       # Python 依赖（仅核心库，不含 byteautoui）
 ├── index.html            # 前端界面
 ├── backend/
 │   └── main.py           # 后端服务（启动本地 uiautodev）
-├── uiautodev/            # uiautodev 源代码（本地集成）
+├── byteautoui/            # uiautodev 源代码（本地集成）
 │   ├── __init__.py
 │   ├── __main__.py
 │   ├── app.py
@@ -147,7 +147,7 @@ com.booltox.uiautodev/
 
 ### 新架构（本地源代码）
 ```
-工具后端 → subprocess → uiautodev/__main__.py → 本地源代码
+工具后端 → subprocess → byteautoui/__main__.py → 本地源代码
 ```
 
 ### 关键改动
@@ -161,21 +161,21 @@ com.booltox.uiautodev/
    - 移除了 `uiautodev>=0.0.1` 的 PyPI 依赖
 
 3. **启动方式**
-   - 从 `python -m uiautodev` 改为直接运行 `uiautodev/__main__.py`
+   - 从 `python -m uiautodev` 改为直接运行 `byteautoui/__main__.py`
    - 设置 `PYTHONPATH` 环境变量指向工具目录
 
 ## 二次开发指南
 
 ### 修改源代码
 
-直接编辑 `uiautodev/` 目录下的源代码即可：
+直接编辑 `byteautoui/` 目录下的源代码即可：
 
 ```bash
 # 例如：修改 API 路由
-vim uiautodev/app.py
+vim byteautoui/app.py
 
 # 例如：添加新的设备驱动
-vim uiautodev/driver/custom_driver.py
+vim byteautoui/driver/custom_driver.py
 ```
 
 ### 调试技巧
@@ -188,7 +188,7 @@ vim uiautodev/driver/custom_driver.py
 
 #### 1. 添加自定义 API 端点
 
-编辑 `uiautodev/app.py`：
+编辑 `byteautoui/app.py`：
 
 ```python
 @app.get("/api/custom/my-feature")
@@ -198,14 +198,14 @@ async def my_custom_feature():
 
 #### 2. 修改设备连接逻辑
 
-编辑 `uiautodev/driver/` 下的对应驱动文件：
+编辑 `byteautoui/driver/` 下的对应驱动文件：
 - `android.py` - Android 设备
 - `ios.py` - iOS 设备
 - `harmony.py` - Harmony 设备
 
 #### 3. 自定义 UI 检查规则
 
-编辑 `uiautodev/remote/` 下的相关文件。
+编辑 `byteautoui/remote/` 下的相关文件。
 
 ## 依赖说明
 
@@ -254,7 +254,7 @@ cd /Users/byte/projects/TS/BoolTox/uiautodev
 git pull origin main
 
 # 3. 复制到工具目录
-cp -r uiautodev /Users/byte/projects/TS/BoolTox/packages/client/plugins/com.booltox.uiautodev/
+cp -r uiautodev /Users/byte/projects/TS/BoolTox/packages/client/plugins/com.booltox.byteautoui/
 
 # 4. 重启工具即可生效
 ```
@@ -269,7 +269,7 @@ cp -r uiautodev /Users/byte/projects/TS/BoolTox/packages/client/plugins/com.bool
 
 ### 导入错误
 
-1. 确认 `uiautodev/` 目录完整存在
+1. 确认 `byteautoui/` 目录完整存在
 2. 检查 `backend/main.py` 中的路径设置
 3. 验证 `PYTHONPATH` 环境变量
 

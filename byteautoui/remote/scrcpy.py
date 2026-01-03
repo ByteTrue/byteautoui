@@ -13,7 +13,7 @@ from adbutils._adb import AdbConnection
 from adbutils._device import AdbDevice
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from uiautodev.remote.touch_controller import ScrcpyTouchController
+from byteautoui.remote.touch_controller import ScrcpyTouchController
 
 logger = logging.getLogger(__name__)
 

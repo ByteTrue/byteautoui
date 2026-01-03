@@ -1,12 +1,12 @@
 {
-  "id": "com.booltox.uiautodev",
+  "id": "com.byte.byteautoui",
   "version": "0.1.0",
-  "name": "UI Auto Dev",
-  "description": "移动端 UI 自动化检查工具，支持 Android/iOS/Harmony 设备的 UI 层级检查、元素定位、XPath 生成等功能",
+  "name": "ByteAutoUI",
+  "description": "移动端 UI 自动化检查工具（基于 uiautodev 深度定制），支持 Android/iOS/Harmony 设备的 UI 层级检查、元素定位、XPath 生成等功能",
   "protocol": "^2.0.0",
-  "author": "codeskyblue",
-  "homepage": "https://uiauto.dev",
-  "repository": "https://github.com/codeskyblue/uiautodev",
+  "author": "ByteTrue",
+  "homepage": "https://github.com/ByteTrue/byteautoui",
+  "repository": "https://github.com/ByteTrue/byteautoui",
   "runtime": {
     "type": "http-service",
     "backend": {

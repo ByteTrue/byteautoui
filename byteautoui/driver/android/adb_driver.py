@@ -12,11 +12,11 @@ from typing import Iterator, List, Optional, Tuple
 import adbutils
 from PIL import Image
 
-from uiautodev.command_types import CurrentAppResponse
-from uiautodev.driver.android.common import parse_xml
-from uiautodev.driver.base_driver import BaseDriver
-from uiautodev.exceptions import AndroidDriverException
-from uiautodev.model import AppInfo, Node, Rect, ShellResponse, WindowSize
+from byteautoui.command_types import CurrentAppResponse
+from byteautoui.driver.android.common import parse_xml
+from byteautoui.driver.base_driver import BaseDriver
+from byteautoui.exceptions import AndroidDriverException
+from byteautoui.model import AppInfo, Node, Rect, ShellResponse, WindowSize
 
 logger = logging.getLogger(__name__)
 

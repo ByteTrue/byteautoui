@@ -22,11 +22,11 @@ import uvicorn
 from retry import retry
 from rich.logging import RichHandler
 
-from uiautodev import __version__, command_proxy
-from uiautodev.command_types import Command
-from uiautodev.common import get_webpage_url
-from uiautodev.provider import AndroidProvider, BaseProvider, IOSProvider
-from uiautodev.utils.common import convert_params_to_model, print_json
+from byteautoui import __version__, command_proxy
+from byteautoui.command_types import Command
+from byteautoui.common import get_webpage_url
+from byteautoui.provider import AndroidProvider, BaseProvider, IOSProvider
+from byteautoui.utils.common import convert_params_to_model, print_json
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ HARMONY_PACKAGES = [
 
 
 def enable_logger_to_console(level):
-    _logger = logging.getLogger("uiautodev")
+    _logger = logging.getLogger("byteautoui")
     _logger.setLevel(level)
     _logger.addHandler(RichHandler(enable_link_path=False))
 
@@ -103,7 +103,7 @@ def ios(command: Command, params: list[str] = None):
 
 @cli.command(help="run case (beta)")
 def case():
-    from uiautodev.case import run
+    from byteautoui.case import run
     run()
 
 
@@ -111,8 +111,8 @@ def case():
 @click.argument("command", type=Command, required=True)
 @click.argument("params", required=False, nargs=-1)
 def appium(command: Command, params: list[str] = None):
-    from uiautodev.driver.appium import AppiumProvider
-    from uiautodev.exceptions import AppiumDriverException
+    from byteautoui.driver.appium import AppiumProvider
+    from byteautoui.exceptions import AppiumDriverException
 
     provider = AppiumProvider()
     try:
@@ -129,8 +129,8 @@ def print_version():
 
 @cli.command('self-update')
 def self_update():
-    """ Update uiautodev to latest version """
-    subprocess.run([sys.executable, '-m', "pip", "install", "--upgrade", "uiautodev"])
+    """ Update byteautoui to latest version """
+    subprocess.run([sys.executable, '-m', "pip", "install", "--upgrade", "byteautoui"])
 
 
 @cli.command('install-harmony')
@@ -153,7 +153,7 @@ def pip_install(package: str):
 @click.option("--offline", is_flag=True, default=False, help="offline mode, do not use internet")
 @click.option("--server-url", default="https://uiauto.dev", help="uiauto.dev server url", show_default=True)
 def server(port: int, host: str, reload: bool, force: bool, no_browser: bool, offline: bool, server_url: str):
-    click.echo(f"uiautodev version: {__version__}")
+    click.echo(f"byteautoui version: {__version__}")
     if force:
         try:
             httpx.get(f"http://{host}:{port}/shutdown", timeout=3)
@@ -172,7 +172,7 @@ def server(port: int, host: str, reload: bool, force: bool, no_browser: bool, of
         th = threading.Thread(target=open_browser_when_server_start, args=(f"http://{host}:{port}", False))
         th.daemon = True
         th.start()
-    uvicorn.run("uiautodev.app:app", host=host, port=port, reload=reload, use_colors=use_color)
+    uvicorn.run("byteautoui.app:app", host=host, port=port, reload=reload, use_colors=use_color)
 
 @cli.command(help="shutdown uiauto.dev local server")
 @click.option("--port", default=20242, help="port number", show_default=True)

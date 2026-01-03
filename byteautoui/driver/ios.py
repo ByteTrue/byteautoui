@@ -13,11 +13,11 @@ from xml.etree import ElementTree
 import wdapy
 from PIL import Image
 
-from uiautodev.command_types import CurrentAppResponse
-from uiautodev.driver.base_driver import BaseDriver
-from uiautodev.exceptions import IOSDriverException
-from uiautodev.model import Node, WindowSize
-from uiautodev.utils.usbmux import select_device
+from byteautoui.command_types import CurrentAppResponse
+from byteautoui.driver.base_driver import BaseDriver
+from byteautoui.exceptions import IOSDriverException
+from byteautoui.model import Node, WindowSize
+from byteautoui.utils.usbmux import select_device
 
 
 class IOSDriver(BaseDriver):

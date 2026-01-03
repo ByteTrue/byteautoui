@@ -13,10 +13,10 @@ from typing import Optional, Tuple
 import uiautomator2 as u2
 from PIL import Image
 
-from uiautodev.driver.android.adb_driver import ADBAndroidDriver
-from uiautodev.driver.android.common import parse_xml
-from uiautodev.exceptions import AndroidDriverException
-from uiautodev.model import AppInfo, Node, WindowSize
+from byteautoui.driver.android.adb_driver import ADBAndroidDriver
+from byteautoui.driver.android.common import parse_xml
+from byteautoui.exceptions import AndroidDriverException
+from byteautoui.model import AppInfo, Node, WindowSize
 
 logger = logging.getLogger(__name__)
 

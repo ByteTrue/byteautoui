@@ -11,13 +11,13 @@ from typing import Type
 
 import adbutils
 
-from uiautodev.driver.android import ADBAndroidDriver, U2AndroidDriver
-from uiautodev.driver.base_driver import BaseDriver
-from uiautodev.driver.harmony import HDC, HarmonyDriver
-from uiautodev.driver.ios import IOSDriver
-from uiautodev.exceptions import UiautoException
-from uiautodev.model import DeviceInfo
-from uiautodev.utils.usbmux import MuxDevice, list_devices
+from byteautoui.driver.android import ADBAndroidDriver, U2AndroidDriver
+from byteautoui.driver.base_driver import BaseDriver
+from byteautoui.driver.harmony import HDC, HarmonyDriver
+from byteautoui.driver.ios import IOSDriver
+from byteautoui.exceptions import UiautoException
+from byteautoui.model import DeviceInfo
+from byteautoui.utils.usbmux import MuxDevice, list_devices
 
 
 class BaseProvider(abc.ABC):

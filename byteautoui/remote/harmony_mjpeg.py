@@ -8,7 +8,7 @@ from threading import Thread
 from fastapi import WebSocket
 from hypium import KeyCode
 
-from uiautodev.exceptions import HarmonyDriverException
+from byteautoui.exceptions import HarmonyDriverException
 
 logger = logging.getLogger(__name__)
 

@@ -12,10 +12,10 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from uiautodev import command_proxy
-from uiautodev.command_types import Command, CurrentAppResponse, InstallAppRequest, InstallAppResponse, TapRequest
-from uiautodev.model import DeviceInfo, Node, ShellResponse
-from uiautodev.provider import BaseProvider
+from byteautoui import command_proxy
+from byteautoui.command_types import Command, CurrentAppResponse, InstallAppRequest, InstallAppResponse, TapRequest
+from byteautoui.model import DeviceInfo, Node, ShellResponse
+from byteautoui.provider import BaseProvider
 
 logger = logging.getLogger(__name__)
 

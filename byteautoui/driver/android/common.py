@@ -3,8 +3,8 @@ from functools import partial
 from typing import List, Optional, Tuple
 from xml.etree import ElementTree
 
-from uiautodev.exceptions import AndroidDriverException, RequestError
-from uiautodev.model import AppInfo, Node, Rect, ShellResponse, WindowSize
+from byteautoui.exceptions import AndroidDriverException, RequestError
+from byteautoui.model import AppInfo, Node, Rect, ShellResponse, WindowSize
 
 
 def parse_xml(xml_data: str, wsize: WindowSize, display_id: Optional[int] = None) -> Node:
