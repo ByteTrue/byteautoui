@@ -1,6 +1,6 @@
 # ByteAutoUI
 
-移动端 UI 自动化检查工具，基于 [uiautodev](https://github.com/codeskyblue/uiautodev) 深度定制。
+移动端 UI 自动化检查工具，基于 [uiautodev](https://github.com/codeskyblue/uiautodev) 二次开发。
 
 支持 Android/iOS/Harmony 设备的 UI 层级检查、元素定位、XPath 生成等功能。
 
