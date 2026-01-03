@@ -4,6 +4,7 @@ import { resolve } from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // @ts-expect-error - Vite 7 和 @vitejs/plugin-vue 6 类型定义不完全兼容，但运行时正常
   plugins: [vue()],
   resolve: {
     alias: {

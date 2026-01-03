@@ -35,7 +35,6 @@ import {
   SendOutline,
   TrashOutline,
   RadioButtonOnOutline,
-  FingerPrintOutline,
   MoonOutline,
 } from '@vicons/ionicons5'
 import { useDeviceStore } from '@/stores/device'

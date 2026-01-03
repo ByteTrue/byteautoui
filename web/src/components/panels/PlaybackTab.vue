@@ -100,7 +100,7 @@
             pending: player.currentIndex.value < index,
           }"
         >
-          <span class="step-index">{{ index + 1 }}</span>
+          <span class="step-index">{{ Number(index) + 1 }}</span>
           <n-tag :type="getActionTypeColor(action.type)" size="small">
             {{ action.type }}
           </n-tag>

@@ -204,7 +204,7 @@ export function usePlayer(
       }
 
       default:
-        console.warn('未知操作类型:', action.type)
+        console.warn('未知操作类型')
     }
   }
 

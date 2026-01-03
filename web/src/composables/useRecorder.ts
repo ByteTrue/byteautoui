@@ -8,6 +8,11 @@ import type {
   XPathInfo,
   ElementInfo,
   ActionParams,
+  TapParams,
+  SwipeParams,
+  InputParams,
+  SleepParams,
+  CommandParams,
 } from '@/types/recording'
 import { downloadJSON } from '@/utils/download'
 
@@ -159,17 +164,64 @@ export function useRecorder(
     if (!isRecording.value || isPaused.value) return
 
     const now = Date.now()
-    const action: RecordedAction = {
+    const baseAction = {
       id: crypto.randomUUID(),
       timestamp: now,
       relativeTime: now - startTime.value,
-      type,
-      coords,
-      endCoords,
-      xpath: coords ? createXPathInfo(selectedNode || null, coords.x, coords.y) : undefined,
-      element: createElementInfo(selectedNode || null),
       screenshot: await captureScreenshot(),
-      params,
+    }
+
+    let action: RecordedAction
+
+    // 根据类型构建正确的 action 对象
+    switch (type) {
+      case 'tap':
+        action = {
+          ...baseAction,
+          type: 'tap',
+          coords: coords!,
+          xpath: coords ? createXPathInfo(selectedNode || null, coords.x, coords.y) : undefined,
+          element: createElementInfo(selectedNode || null),
+          params: params as TapParams,
+        }
+        break
+      case 'swipe':
+        action = {
+          ...baseAction,
+          type: 'swipe',
+          coords: coords!,
+          endCoords: endCoords!,
+          element: createElementInfo(selectedNode || null),
+          params: params as SwipeParams,
+        }
+        break
+      case 'input':
+        action = {
+          ...baseAction,
+          type: 'input',
+          element: createElementInfo(selectedNode || null),
+          params: params as InputParams,
+        }
+        break
+      case 'sleep':
+        action = {
+          ...baseAction,
+          type: 'sleep',
+          params: params as SleepParams,
+        }
+        break
+      case 'command':
+      case 'back':
+      case 'home':
+        action = {
+          ...baseAction,
+          type: type as 'command' | 'back' | 'home',
+          params: params as CommandParams,
+        }
+        break
+      default:
+        console.warn('未知操作类型，跳过录制')
+        return
     }
 
     actions.value.push(action)
@@ -239,20 +291,20 @@ export function useRecorder(
   /**
    * 更新操作
    */
-  function updateAction(id: string, updates: Partial<RecordedAction>) {
+  function updateAction(id: string, updates: Record<string, any>) {
     const index = actions.value.findIndex((a) => a.id === id)
     if (index !== -1) {
-      actions.value[index] = { ...actions.value[index]!, ...updates }
+      actions.value[index] = { ...actions.value[index]!, ...updates } as RecordedAction
     }
   }
 
   /**
    * 导出为RecordingFile
    */
-  function exportRecording(): RecordingFile {
+  function exportRecording(customName?: string): RecordingFile {
     return {
       version: '1.0',
-      name: recordingName.value,
+      name: customName || recordingName.value,
       description: undefined,
       platform,
       deviceInfo: {
