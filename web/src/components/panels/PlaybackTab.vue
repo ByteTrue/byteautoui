@@ -133,6 +133,7 @@ import {
   PlaySkipForwardOutline,
   PlayCircleOutline,
   TrashOutline,
+  CreateOutline,
 } from '@vicons/ionicons5'
 import type { RecordingMetadata } from '@/api/recording'
 import {
@@ -168,6 +169,7 @@ const emit = defineEmits<{
   'refresh-recordings': []
   'start-playback': []
   'load-recording': [group: string, name: string]
+  'edit-recording': [group: string, name: string]
   'delete-recording': [group: string, name: string]
 }>()
 
@@ -261,6 +263,15 @@ function renderRecordingSuffix({ option }: { option: TreeOption }) {
           onClick: () => emit('load-recording', rec.group, rec.name),
         },
         { icon: () => h(NIcon, null, { default: () => h(PlayCircleOutline) }) }
+      ),
+      h(
+        NButton,
+        {
+          size: 'tiny',
+          quaternary: true,
+          onClick: () => emit('edit-recording', rec.group, rec.name),
+        },
+        { icon: () => h(NIcon, null, { default: () => h(CreateOutline) }) }
       ),
       h(
         NButton,
