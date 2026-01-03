@@ -57,6 +57,7 @@
     <ActionEditDialog
       v-model:show="showEditDialog"
       :action="editingAction"
+      :screen-size="screenSize"
       @save="handleSaveActionEdit"
     />
   </div>
@@ -247,6 +248,24 @@ async function loadRecording(group: string, name: string) {
 }
 
 async function handleEditRecording(group: string, name: string) {
+  // 检查是否有未保存的录制
+  if (recorder.actionCount.value > 0) {
+    dialog.warning({
+      title: '确认覆盖',
+      content: '当前有未保存的录制操作，加载新录制将会覆盖这些操作。是否继续？',
+      positiveText: '继续加载',
+      negativeText: '取消',
+      onPositiveClick: async () => {
+        await loadRecordingForEdit(group, name)
+      },
+    })
+    return
+  }
+
+  await loadRecordingForEdit(group, name)
+}
+
+async function loadRecordingForEdit(group: string, name: string) {
   try {
     const recording = await loadRecordingAPI(group, name)
     // 导入到录制器，这样可以在录制Tab中编辑

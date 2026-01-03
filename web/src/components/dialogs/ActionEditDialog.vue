@@ -134,7 +134,11 @@
       <!-- Command 专属字段 -->
       <template v-if="editingAction.type === 'command' || editingAction.type === 'back' || editingAction.type === 'home'">
         <n-form-item :label="t.actions.command" path="params.command">
-          <n-input v-model:value="formData.params.command" />
+          <n-input
+            v-model:value="formData.params.command"
+            :disabled="editingAction.type === 'back' || editingAction.type === 'home'"
+            :placeholder="editingAction.type === 'back' ? 'back' : editingAction.type === 'home' ? 'home' : ''"
+          />
         </n-form-item>
       </template>
 
@@ -174,6 +178,7 @@ import { useI18nStore } from '@/stores/i18n'
 
 interface Props {
   action: RecordedAction | null
+  screenSize: { width: number; height: number }
 }
 
 const props = defineProps<Props>()
@@ -268,8 +273,10 @@ const rules = computed<FormRules>(() => ({
   'params.duration': [
     { required: true, type: 'number', message: '时长不能为空', trigger: 'blur' },
   ],
+  'params.command': [
+    { required: true, message: '命令不能为空', trigger: 'blur' },
+  ],
 }))
-
 // 保存处理
 async function handleSave() {
   if (!formRef.value || !editingAction.value) return
@@ -291,12 +298,20 @@ async function handleSave() {
         formData.value.coords.x !== editingAction.value.coords.x ||
         formData.value.coords.y !== editingAction.value.coords.y
       ) {
-        // 坐标变化，需要重新计算 scale
-        (updates as any).coords = {
-          ...formData.value.coords,
+        // 坐标变化，重新计算 scale（验证屏幕尺寸防止除零）
+        const { width, height } = props.screenSize
+        if (!width || !height || width <= 0 || height <= 0) {
+          console.error(`Invalid screen size: ${width}x${height}. Cannot update coordinates.`)
+          return
+        }
+        ;(updates as any).coords = {
+          x: formData.value.coords.x,
+          y: formData.value.coords.y,
+          scaleX: formData.value.coords.x / width,
+          scaleY: formData.value.coords.y / height,
         }
         // 同步更新 params
-        (updates as any).params = {
+        ;(updates as any).params = {
           x: formData.value.coords.x,
           y: formData.value.coords.y,
         }
@@ -327,9 +342,25 @@ async function handleSave() {
         formData.value.endCoords.y !== editingAction.value.endCoords.y
 
       if (coordsChanged) {
-        (updates as any).coords = { ...formData.value.coords }
-        (updates as any).endCoords = { ...formData.value.endCoords }
-        (updates as any).params = {
+        // 坐标变化，重新计算 scale（验证屏幕尺寸防止除零）
+        const { width, height } = props.screenSize
+        if (!width || !height || width <= 0 || height <= 0) {
+          console.error(`Invalid screen size: ${width}x${height}. Cannot update coordinates.`)
+          return
+        }
+        ;(updates as any).coords = {
+          x: formData.value.coords.x,
+          y: formData.value.coords.y,
+          scaleX: formData.value.coords.x / width,
+          scaleY: formData.value.coords.y / height,
+        }
+        ;(updates as any).endCoords = {
+          x: formData.value.endCoords.x,
+          y: formData.value.endCoords.y,
+          scaleX: formData.value.endCoords.x / width,
+          scaleY: formData.value.endCoords.y / height,
+        }
+        ;(updates as any).params = {
           startX: formData.value.coords.x,
           startY: formData.value.coords.y,
           endX: formData.value.endCoords.x,
