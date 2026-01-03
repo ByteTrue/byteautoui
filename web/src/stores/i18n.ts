@@ -112,6 +112,39 @@ const messages = {
       name: '名称',
       operationCount: '操作数',
 
+      // 编辑操作对话框
+      editAction: '编辑操作',
+      actionType: '操作类型',
+      waitTime: '等待时间',
+      relativeTime: '相对时间',
+      milliseconds: '毫秒',
+      seconds: '秒',
+
+      // 坐标相关
+      coordinates: '坐标',
+      coordinateX: 'X坐标',
+      coordinateY: 'Y坐标',
+      startPosition: '起始位置',
+      endPosition: '结束位置',
+
+      // XPath
+      xpathSelector: 'XPath选择器',
+      xpathPlaceholder: '可选，留空则使用坐标模式',
+
+      // 操作参数
+      inputText: '输入文本',
+      swipeDuration: '滑动时长',
+      sleepDuration: '等待时长',
+      command: '命令',
+
+      // 回放状态
+      selectRecording: '请选择录制',
+      idle: '待机',
+      playing: '播放中',
+      paused: '已暂停',
+      stopped: '已停止',
+      error: '错误',
+
       // 对话框
       confirmClear: '确认清空',
       confirmClearMessage: '确定要清空所有录制的操作吗?此操作不可撤销。',
@@ -282,6 +315,39 @@ const messages = {
       group: 'Group',
       name: 'Name',
       operationCount: 'Operations',
+
+      // Edit action dialog
+      editAction: 'Edit Action',
+      actionType: 'Action Type',
+      waitTime: 'Wait Time',
+      relativeTime: 'Relative Time',
+      milliseconds: 'ms',
+      seconds: 's',
+
+      // Coordinates
+      coordinates: 'Coordinates',
+      coordinateX: 'X Coordinate',
+      coordinateY: 'Y Coordinate',
+      startPosition: 'Start Position',
+      endPosition: 'End Position',
+
+      // XPath
+      xpathSelector: 'XPath Selector',
+      xpathPlaceholder: 'Optional, use coordinates if empty',
+
+      // Action params
+      inputText: 'Input Text',
+      swipeDuration: 'Swipe Duration',
+      sleepDuration: 'Sleep Duration',
+      command: 'Command',
+
+      // Playback states
+      selectRecording: 'Select Recording',
+      idle: 'Idle',
+      playing: 'Playing',
+      paused: 'Paused',
+      stopped: 'Stopped',
+      error: 'Error',
 
       // Dialogs
       confirmClear: 'Confirm Clear',

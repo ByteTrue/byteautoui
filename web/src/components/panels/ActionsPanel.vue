@@ -11,7 +11,7 @@
           @toggle-recording="toggleRecording"
           @toggle-pause="togglePause"
           @clear-recording="clearRecording"
-          @save-recording="showSaveDialog = true"
+          @save-recording="showSaveRecordingDialog"
           @edit-action="editAction"
           @delete-action="deleteAction"
         />
@@ -29,6 +29,7 @@
           @refresh-recordings="refreshRecordings"
           @start-playback="startPlayback"
           @load-recording="loadRecording"
+          @edit-recording="handleEditRecording"
           @delete-recording="handleDeleteRecording"
         />
       </n-tab-pane>
@@ -51,6 +52,13 @@
         </n-space>
       </template>
     </n-modal>
+
+    <!-- 编辑对话框 -->
+    <ActionEditDialog
+      v-model:show="showEditDialog"
+      :action="editingAction"
+      @save="handleSaveActionEdit"
+    />
   </div>
 </template>
 
@@ -59,6 +67,7 @@ import { ref, computed, onMounted } from 'vue'
 import { NTabs, NTabPane, NModal, NForm, NFormItem, NInput, NButton, NSpace, useMessage, useDialog } from 'naive-ui'
 import RecordTab from './RecordTab.vue'
 import PlaybackTab from './PlaybackTab.vue'
+import ActionEditDialog from '../dialogs/ActionEditDialog.vue'
 import { useRecorder } from '@/composables/useRecorder'
 import { usePlayer } from '@/composables/usePlayer'
 import { useDeviceStore } from '@/stores/device'
@@ -104,6 +113,10 @@ const saveDialogForm = ref({
   name: '',
 })
 
+// 编辑对话框
+const showEditDialog = ref(false)
+const editingAction = ref<RecordedAction | null>(null)
+
 // 获取当前屏幕尺寸（响应式）
 const screenSize = computed(() => store.screenSize)
 
@@ -141,6 +154,24 @@ function clearRecording() {
   })
 }
 
+function generateDefaultRecordingName(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const hour = String(now.getHours()).padStart(2, '0')
+  const minute = String(now.getMinutes()).padStart(2, '0')
+  const second = String(now.getSeconds()).padStart(2, '0')
+  return `Recording_${year}${month}${day}_${hour}${minute}${second}`
+}
+
+function showSaveRecordingDialog() {
+  // 生成默认文件名
+  saveDialogForm.value.name = generateDefaultRecordingName()
+  saveDialogForm.value.group = 'default'
+  showSaveDialog.value = true
+}
+
 async function confirmSaveRecording() {
   if (!saveDialogForm.value.name) {
     message.warning('请输入录制名称')
@@ -175,8 +206,22 @@ function deleteAction(id: string) {
   recorder.deleteAction(id)
 }
 
-function editAction(_action: RecordedAction) {
-  message.info('编辑功能暂未实现')
+function editAction(action: RecordedAction) {
+  editingAction.value = action
+  showEditDialog.value = true
+}
+
+function handleSaveActionEdit(id: string, updates: Partial<RecordedAction>) {
+  try {
+    const success = recorder.updateAction(id, updates)
+    if (success) {
+      message.success('操作已更新')
+    } else {
+      message.error('更新失败：操作不存在')
+    }
+  } catch (error) {
+    showError('更新失败', error)
+  }
 }
 
 // 回放相关方法
@@ -196,6 +241,19 @@ async function loadRecording(group: string, name: string) {
     const recording = await loadRecordingAPI(group, name)
     player.load(recording)
     message.success(`已加载录制: ${name}`)
+  } catch (error) {
+    showError('加载录制失败', error)
+  }
+}
+
+async function handleEditRecording(group: string, name: string) {
+  try {
+    const recording = await loadRecordingAPI(group, name)
+    // 导入到录制器，这样可以在录制Tab中编辑
+    recorder.importRecording(recording)
+    // 切换到录制Tab
+    activeTab.value = 'record'
+    message.success(`已加载 "${name}" 到录制器，可以编辑了`)
   } catch (error) {
     showError('加载录制失败', error)
   }

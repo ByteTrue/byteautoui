@@ -289,13 +289,36 @@ export function useRecorder(
   }
 
   /**
-   * 更新操作
+   * 更新操作（类型安全版本）
+   *
+   * @param id 操作ID
+   * @param updates 部分更新（必须保持 type、id、timestamp 不变）
+   * @returns 是否更新成功
    */
-  function updateAction(id: string, updates: Record<string, any>) {
+  function updateAction(id: string, updates: Partial<RecordedAction>): boolean {
     const index = actions.value.findIndex((a) => a.id === id)
-    if (index !== -1) {
-      actions.value[index] = { ...actions.value[index]!, ...updates } as RecordedAction
+    if (index === -1) {
+      console.warn(`Action with id ${id} not found`)
+      return false
     }
+
+    const current = actions.value[index]!
+    const merged = { ...current, ...updates }
+
+    // 类型守卫：禁止修改不可变字段
+    if (merged.type !== current.type) {
+      throw new Error('Cannot change action type')
+    }
+    if (merged.id !== current.id) {
+      throw new Error('Cannot change action id')
+    }
+    if (merged.timestamp !== current.timestamp) {
+      throw new Error('Cannot change action timestamp')
+    }
+
+    // 类型安全的合并
+    actions.value[index] = merged as RecordedAction
+    return true
   }
 
   /**
