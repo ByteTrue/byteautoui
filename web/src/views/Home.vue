@@ -5,8 +5,8 @@
         <n-icon size="80" color="var(--md-primary)">
           <PhoneLandscapeOutline />
         </n-icon>
-        <h1 class="app-title">UI Auto Dev</h1>
-        <p class="app-subtitle">跨平台 UI 自动化测试工具</p>
+        <h1 class="app-title">ByteAutoUI</h1>
+        <p class="app-subtitle">移动端 UI 自动化检查工具</p>
       </div>
 
       <div class="action-section">
@@ -104,11 +104,8 @@ function handleDeviceSelect(platform: Platform, serial: string) {
   margin: 0;
   font-size: var(--md-font-size-xxl);
   font-weight: var(--md-font-weight-bold);
-  color: var(--md-text-primary);
-  background: linear-gradient(135deg, var(--md-primary) 0%, var(--md-secondary) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  /* 直接使用主色文字，简单可靠 */
+  color: var(--md-primary);
 }
 
 .app-subtitle {

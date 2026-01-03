@@ -301,6 +301,7 @@ function nodeProps({ option }: { option: TreeOption }) {
   flex-direction: column;
   height: 100%;
   gap: 12px;
+  padding: 0 16px;
 }
 
 .recordings-section {

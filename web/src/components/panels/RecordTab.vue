@@ -119,6 +119,13 @@ defineEmits<{
 </script>
 
 <style scoped>
+.tab-content {
+  padding: 0 16px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 .control-bar {
   display: flex;
   justify-content: space-between;
