@@ -20,8 +20,26 @@
 
 ### 手动启动（开发/测试）
 
+#### 使用 uv（推荐）
+
 ```bash
 cd byteautoui
+
+# 安装依赖
+uv sync
+
+# 启动服务
+uv run python backend/main.py
+
+# 或直接运行 CLI
+uv run python -m byteautoui server
+```
+
+#### 使用传统 pip
+
+```bash
+cd byteautoui
+pip install -r requirements.txt
 python backend/main.py
 ```
 
@@ -157,14 +175,36 @@ com.booltox.byteautoui/
    - 通过 `sys.path.insert()` 和 `PYTHONPATH` 确保使用本地代码
 
 2. **依赖管理**
-   - `requirements.txt` 仅包含 uiautodev 的核心依赖库
-   - 移除了 `uiautodev>=0.0.1` 的 PyPI 依赖
+   - 使用 `uv` 作为包管理器（现代、快速）
+   - `pyproject.toml` 是依赖配置的源头（Source of Truth）
+   - `requirements.txt` 通过 `uv export` 自动生成（供 BoolTox 使用）
 
 3. **启动方式**
    - 从 `python -m uiautodev` 改为直接运行 `byteautoui/__main__.py`
    - 设置 `PYTHONPATH` 环境变量指向工具目录
 
 ## 二次开发指南
+
+### 依赖管理（使用 uv）
+
+```bash
+# 添加新依赖
+uv add requests
+
+# 添加开发依赖
+uv add --group dev pytest
+
+# 移除依赖
+uv remove requests
+
+# 同步依赖（安装 pyproject.toml 中的所有依赖）
+uv sync
+
+# 更新 requirements.txt（供 BoolTox 使用）
+uv export --no-hashes --no-dev --no-editable > requirements.txt.tmp
+sed '/^\.$/d' requirements.txt.tmp > requirements.txt
+rm requirements.txt.tmp
+```
 
 ### 修改源代码
 

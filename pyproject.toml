@@ -1,0 +1,49 @@
+[project]
+name = "byteautoui"
+version = "0.1.0"
+description = "移动端 UI 自动化检查工具（基于 uiautodev 深度定制）"
+authors = [
+    { name = "ByteTrue", email = "your-email@example.com" }
+]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+dependencies = [
+    "adbutils>=2.8.10,<3",
+    "click>=8.1.7",
+    "construct",
+    "fastapi>=0.115.12,<1",
+    "httpx>=0.28.1",
+    "lxml>=6.0.2",
+    "pillow>=9",
+    "pydantic>=2.6",
+    "pygments>=2",
+    "python-multipart>=0.0.18",
+    "rich",
+    "uiautomator2>=3.2.0,<4",
+    "uvicorn>=0.33.0",
+    "wdapy>0.2.2,<1",
+    "websockets>=10.4",
+]
+
+[project.optional-dependencies]
+harmony = [
+    "hypium>=6.0.7.200,<7.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/ByteTrue/byteautoui"
+Repository = "https://github.com/ByteTrue/byteautoui"
+
+[project.scripts]
+byteautoui = "byteautoui.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["byteautoui"]
