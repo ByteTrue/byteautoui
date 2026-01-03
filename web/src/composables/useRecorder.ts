@@ -335,7 +335,7 @@ export function useRecorder(
    */
   function saveToFile() {
     const recording = exportRecording()
-    downloadJSON(recording, `${recording.name}.buiauto`)
+    downloadJSON(recording, `${recording.name}.byteautoui`)
   }
 
   /**
@@ -407,7 +407,7 @@ export function useRecorder(
     return new Promise((resolve, reject) => {
       const input = document.createElement('input')
       input.type = 'file'
-      input.accept = '.buiauto.json,.json'
+      input.accept = '.byteautoui.json,.json'
       input.onchange = async () => {
         const file = input.files?.[0]
         if (!file) {

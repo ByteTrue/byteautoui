@@ -144,14 +144,14 @@ def pip_install(package: str):
     click.echo(f"Successfully installed {package}")
 
 
-@cli.command(help="start uiauto.dev local server [Default]")
+@cli.command(help="start ByteAutoUI local server [Default]")
 @click.option("--port", default=20242, help="port number", show_default=True)
 @click.option("--host", default="127.0.0.1", help="host", show_default=True)
 @click.option("--reload", is_flag=True, default=False, help="auto reload, dev only")
 @click.option("-f", "--force", is_flag=True, default=False, help="shutdown already running server")
 @click.option("-s", "--no-browser", is_flag=True, default=False, help="silent mode, do not open browser")
 @click.option("--offline", is_flag=True, default=False, help="offline mode, do not use internet")
-@click.option("--server-url", default="https://uiauto.dev", help="uiauto.dev server url", show_default=True)
+@click.option("--server-url", default="https://uiauto.dev", help="original uiauto.dev server url", show_default=True)
 def server(port: int, host: str, reload: bool, force: bool, no_browser: bool, offline: bool, server_url: str):
     click.echo(f"byteautoui version: {__version__}")
     if force:
@@ -174,7 +174,7 @@ def server(port: int, host: str, reload: bool, force: bool, no_browser: bool, of
         th.start()
     uvicorn.run("byteautoui.app:app", host=host, port=port, reload=reload, use_colors=use_color)
 
-@cli.command(help="shutdown uiauto.dev local server")
+@cli.command(help="shutdown ByteAutoUI local server")
 @click.option("--port", default=20242, help="port number", show_default=True)
 def shutdown(port: int):
     try:
@@ -204,7 +204,7 @@ def main():
             has_command = True
 
     if not has_command:
-        cli.main(args=sys.argv[1:] + ["server"], prog_name="uiauto.dev")
+        cli.main(args=sys.argv[1:] + ["server"], prog_name="byteautoui")
     else:
         cli()
 

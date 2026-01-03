@@ -45,9 +45,9 @@ class LoadRecordingResponse(BaseModel):
 
 
 def get_recordings_root() -> Path:
-    """Get the root directory for recordings (~/.buiauto)"""
+    """Get the root directory for recordings (~/.byteautoui)"""
     home = Path.home()
-    recordings_dir = home / ".buiauto"
+    recordings_dir = home / ".byteautoui"
     recordings_dir.mkdir(parents=True, exist_ok=True)
     return recordings_dir
 
@@ -75,9 +75,9 @@ def get_recording_path(group: str, name: str) -> Path:
 
     group_dir.mkdir(parents=True, exist_ok=True)
 
-    # Ensure .buiauto.json extension
-    if not name.endswith(".buiauto.json"):
-        name = f"{name}.buiauto.json"
+    # Ensure .byteautoui.json extension
+    if not name.endswith(".byteautoui.json"):
+        name = f"{name}.byteautoui.json"
 
     return group_dir / name
 
@@ -87,7 +87,7 @@ async def save_recording(request: SaveRecordingRequest) -> dict:
     """
     Save a recording to the file system
 
-    Path: ~/.buiauto/{group}/{name}.buiauto.json
+    Path: ~/.byteautoui/{group}/{name}.byteautoui.json
     """
     try:
         file_path = get_recording_path(request.group, request.name)
@@ -121,14 +121,14 @@ async def list_recordings() -> RecordingListResponse:
     """
     List all recordings grouped by folder
 
-    Returns all .buiauto.json files in ~/.buiauto/
+    Returns all .byteautoui.json files in ~/.byteautoui/
     """
     try:
         root = get_recordings_root()
         recordings = []
 
-        # Recursively find all .buiauto.json files
-        for file_path in root.rglob("*.buiauto.json"):
+        # Recursively find all .byteautoui.json files
+        for file_path in root.rglob("*.byteautoui.json"):
             stat = file_path.stat()
 
             # Calculate group (relative path from root)
@@ -137,7 +137,7 @@ async def list_recordings() -> RecordingListResponse:
 
             recordings.append(RecordingMetadata(
                 group=group,
-                name=file_path.stem.replace(".buiauto", ""),  # Remove .buiauto from stem
+                name=file_path.stem.replace(".byteautoui", ""),  # Remove .byteautoui from stem
                 path=str(file_path),
                 size=stat.st_size,
                 created_at=stat.st_ctime,
@@ -162,7 +162,7 @@ async def load_recording(group: str, name: str) -> LoadRecordingResponse:
 
     Query params:
     - group: subfolder name
-    - name: file name (without .buiauto.json extension)
+    - name: file name (without .byteautoui.json extension)
     """
     try:
         file_path = get_recording_path(group, name)
@@ -199,7 +199,7 @@ async def delete_recording(group: str, name: str) -> dict:
 
     Query params:
     - group: subfolder name
-    - name: file name (without .buiauto.json extension)
+    - name: file name (without .byteautoui.json extension)
     """
     try:
         file_path = get_recording_path(group, name)
