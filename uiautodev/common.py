@@ -27,11 +27,9 @@ def is_chinese_language() -> bool:
     
     
 def get_webpage_url(web_url: Optional[str] = None) -> str:
+    """完全本地化：返回本地服务地址"""
     if not web_url:
-        web_url = "https://uiauto.dev"
-    # code will be enabled until uiauto.devsleep.com is ready
-    # if is_chinese_language():
-    #     web_url = "https://uiauto.devsleep.com"
+        web_url = "http://127.0.0.1:20242"
     return web_url
 
 

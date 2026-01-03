@@ -165,15 +165,11 @@ def server(port: int, host: str, reload: bool, force: bool, no_browser: bool, of
         use_color = False
 
     server_url = server_url.rstrip('/')
-    from uiautodev.router import proxy
-    proxy.base_url = server_url
-
-    if offline:
-        proxy.cache_dir.mkdir(parents=True, exist_ok=True)
-        logger.info("offline mode enabled, cache dir: %s, server url: %s", proxy.cache_dir, proxy.base_url)
+    # 不再需要设置 proxy 相关配置
+    # 现在使用静态文件服务，无需 HTTP 缓存代理
 
     if not no_browser:
-        th = threading.Thread(target=open_browser_when_server_start, args=(f"http://{host}:{port}", offline))
+        th = threading.Thread(target=open_browser_when_server_start, args=(f"http://{host}:{port}", False))
         th.daemon = True
         th.start()
     uvicorn.run("uiautodev.app:app", host=host, port=port, reload=reload, use_colors=use_color)

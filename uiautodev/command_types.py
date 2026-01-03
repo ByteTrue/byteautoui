@@ -41,6 +41,11 @@ class Command(str, enum.Enum):
     VOLUME_MUTE = "volumeMute"
     SEND_KEYS = "sendKeys"
     CLEAR_TEXT = "clearText"
+    SWIPE = "swipe"
+    SWIPE_UP = "swipeUp"
+    SWIPE_DOWN = "swipeDown"
+    SWIPE_LEFT = "swipeLeft"
+    SWIPE_RIGHT = "swipeRight"
 
 
 class TapRequest(BaseModel):
@@ -89,7 +94,7 @@ class By(str, enum.Enum):
     CLASS_NAME = "className"
 
 class FindElementRequest(BaseModel):
-    by: str
+    by: By
     value: str
     timeout: float = 10.0
 
@@ -101,3 +106,11 @@ class FindElementResponse(BaseModel):
 
 class SendKeysRequest(BaseModel):
     text: str
+
+
+class SwipeRequest(BaseModel):
+    startX: Union[int, float]
+    startY: Union[int, float]
+    endX: Union[int, float]
+    endY: Union[int, float]
+    duration: float = 0.5  # seconds

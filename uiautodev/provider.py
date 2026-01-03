@@ -15,7 +15,6 @@ from uiautodev.driver.android import ADBAndroidDriver, U2AndroidDriver
 from uiautodev.driver.base_driver import BaseDriver
 from uiautodev.driver.harmony import HDC, HarmonyDriver
 from uiautodev.driver.ios import IOSDriver
-from uiautodev.driver.mock import MockDriver
 from uiautodev.exceptions import UiautoException
 from uiautodev.model import DeviceInfo
 from uiautodev.utils.usbmux import MuxDevice, list_devices
@@ -89,11 +88,3 @@ class HarmonyProvider(BaseProvider):
     @lru_cache
     def get_device_driver(self, serial: str) -> HarmonyDriver:
         return HarmonyDriver(self.hdc, serial)
-
-
-class MockProvider(BaseProvider):
-    def list_devices(self) -> list[DeviceInfo]:
-        return [DeviceInfo(serial="mock-serial", model="mock-model", name="mock-name")]
-
-    def get_device_driver(self, serial: str) -> BaseDriver:
-        return MockDriver(serial)

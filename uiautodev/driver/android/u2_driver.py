@@ -66,3 +66,7 @@ class U2AndroidDriver(ADBAndroidDriver):
     
     def clear_text(self):
         self.ud.clear_text()
+
+    def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: float = 0.5):
+        """Swipe from (start_x, start_y) to (end_x, end_y)"""
+        self.ud.swipe(start_x, start_y, end_x, end_y, duration)

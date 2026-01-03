@@ -16,6 +16,7 @@ import uvicorn
 from fastapi import FastAPI, File, Request, Response, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect
 
@@ -23,12 +24,12 @@ from uiautodev import __version__
 from uiautodev.common import convert_bytes_to_image, get_webpage_url, ocr_image
 from uiautodev.driver.android import ADBAndroidDriver, U2AndroidDriver
 from uiautodev.model import Node
-from uiautodev.provider import AndroidProvider, HarmonyProvider, IOSProvider, MockProvider
+from uiautodev.provider import AndroidProvider, HarmonyProvider, IOSProvider
 from uiautodev.remote.scrcpy import ScrcpyServer
 from uiautodev.router.android import router as android_device_router
 from uiautodev.router.device import make_router
-from uiautodev.router.proxy import make_reverse_proxy
-from uiautodev.router.proxy import router as proxy_router
+# from uiautodev.router.proxy import router as proxy_router  # 不再需要代理路由
+from uiautodev.router.recording import router as recording_router
 from uiautodev.router.xml import router as xml_router
 from uiautodev.utils.envutils import Environment
 
@@ -52,14 +53,10 @@ android_router = make_router(AndroidProvider(driver_class=android_default_driver
 android_adb_router = make_router(AndroidProvider(driver_class=ADBAndroidDriver))
 ios_router = make_router(IOSProvider())
 harmony_router = make_router(HarmonyProvider())
-mock_router = make_router(MockProvider())
-
-app.include_router(mock_router, prefix="/api/mock", tags=["mock"])
 
 if Environment.UIAUTODEV_MOCK:
-    app.include_router(mock_router, prefix="/api/android", tags=["mock"])
-    app.include_router(mock_router, prefix="/api/ios", tags=["mock"])
-    app.include_router(mock_router, prefix="/api/harmony", tags=["mock"])
+    # Mock mode is deprecated - use real devices instead
+    pass
 else:
     app.include_router(android_router, prefix="/api/android", tags=["android"])
     app.include_router(android_adb_router, prefix="/api/android_adb", tags=["android_adb"])
@@ -68,7 +65,55 @@ else:
 
 app.include_router(xml_router, prefix="/api/xml", tags=["xml"])
 app.include_router(android_device_router, prefix="/api/android", tags=["android"])
-app.include_router(proxy_router, tags=["proxy"])
+app.include_router(recording_router, prefix="/api", tags=["recording"])
+# app.include_router(proxy_router, tags=["proxy"])  # 不再需要代理路由
+
+# 本地 mock API（替代远程 api.uiauto.dev）
+@app.get("/api/pypi/uiautodev/latest-version")
+async def mock_pypi_version():
+    """Mock PyPI 版本检查（本地化）"""
+    return {"version": "0.0.0", "message": "本地化版本"}
+
+# 挂载静态文件目录（完全本地化）
+# 静态文件从 cache/http/ 提取后放在工具根目录的 static/ 下
+_tool_root = Path(__file__).parent.parent  # uiautodev/ -> tools/uiautodev/
+_static_dir = _tool_root / "static"
+
+if _static_dir.exists():
+    # 挂载 assets 目录（JS、CSS、字体、图片等）
+    app.mount("/assets", StaticFiles(directory=str(_static_dir / "assets")), name="assets")
+
+    @app.get("/")
+    @app.get("/android/{path:path}")
+    @app.get("/ios/{path:path}")
+    @app.get("/demo/{path:path}")
+    @app.get("/harmony/{path:path}")
+    async def serve_spa_routes(path: str = ""):
+        """
+        单页应用路由：所有 HTML 页面都返回 index.html
+        前端路由（Vue Router）会处理 URL 路径
+        """
+        return FileResponse(_static_dir / "index.html")
+
+    @app.get("/favicon.ico")
+    async def serve_favicon():
+        """提供网站图标"""
+        return FileResponse(_static_dir / "favicon.ico")
+
+    logger.info(f"✅ 静态文件服务已启用: {_static_dir}")
+else:
+    logger.warning(f"⚠️ 静态文件目录不存在: {_static_dir}")
+    logger.warning(f"   请运行 extract_cache.py 生成静态文件")
+
+    @app.get("/")
+    @app.get("/{path:path}")
+    async def serve_fallback(path: str = ""):
+        """静态文件缺失时的提示"""
+        return JSONResponse({
+            "error": "静态文件未找到",
+            "message": "请运行 extract_cache.py 提取静态文件",
+            "static_dir": str(_static_dir)
+        }, status_code=503)
 
 
 @app.get("/api/{platform}/features")
@@ -137,16 +182,8 @@ def demo():
 
 @app.get("/redirect")
 def index_redirect():
-    """redirect to official homepage"""
-    url = get_webpage_url()
-    logger.debug("redirect to %s", url)
-    return RedirectResponse(url)
-
-
-@app.get("/api/auth/me")
-def mock_auth_me():
-    # 401 {"detail":"Authentication required"}
-    return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+    """本地服务，重定向到本地首页"""
+    return RedirectResponse("/")
 
 @app.websocket('/ws/android/scrcpy3/{serial}')
 async def handle_android_scrcpy3_ws(websocket: WebSocket, serial: str):

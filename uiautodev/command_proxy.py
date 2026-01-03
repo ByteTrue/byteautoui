@@ -10,11 +10,12 @@ import time
 import typing
 from typing import Callable, Dict, List, Optional, Union
 
+from lxml import etree
 from pydantic import BaseModel
 
 from uiautodev.command_types import AppLaunchRequest, AppTerminateRequest, By, Command, CurrentAppResponse, \
     DumpResponse, FindElementRequest, FindElementResponse, InstallAppRequest, InstallAppResponse, SendKeysRequest, \
-    TapRequest, WindowSizeResponse
+    SwipeRequest, TapRequest, WindowSizeResponse
 from uiautodev.driver.base_driver import BaseDriver
 from uiautodev.exceptions import ElementNotFoundError
 from uiautodev.model import AppInfo, Node
@@ -151,6 +152,52 @@ def clear_text(driver: BaseDriver):
     driver.clear_text()
 
 
+@register(Command.SWIPE)
+def swipe(driver: BaseDriver, params: SwipeRequest):
+    """Swipe on the screen"""
+    driver.swipe(
+        int(params.startX), int(params.startY),
+        int(params.endX), int(params.endY),
+        params.duration
+    )
+
+
+@register(Command.SWIPE_UP)
+def swipe_up(driver: BaseDriver):
+    """Swipe up (from bottom to top)"""
+    wsize = driver.window_size()
+    width, height = wsize[0], wsize[1]
+    # 从屏幕底部中央向上滑动到顶部
+    driver.swipe(width // 2, height * 4 // 5, width // 2, height // 5, 0.3)
+
+
+@register(Command.SWIPE_DOWN)
+def swipe_down(driver: BaseDriver):
+    """Swipe down (from top to bottom)"""
+    wsize = driver.window_size()
+    width, height = wsize[0], wsize[1]
+    # 从屏幕顶部中央向下滑动到底部
+    driver.swipe(width // 2, height // 5, width // 2, height * 4 // 5, 0.3)
+
+
+@register(Command.SWIPE_LEFT)
+def swipe_left(driver: BaseDriver):
+    """Swipe left (from right to left)"""
+    wsize = driver.window_size()
+    width, height = wsize[0], wsize[1]
+    # 从屏幕右侧中央向左滑动到左侧
+    driver.swipe(width * 4 // 5, height // 2, width // 5, height // 2, 0.3)
+
+
+@register(Command.SWIPE_RIGHT)
+def swipe_right(driver: BaseDriver):
+    """Swipe right (from left to right)"""
+    wsize = driver.window_size()
+    width, height = wsize[0], wsize[1]
+    # 从屏幕左侧中央向右滑动到右侧
+    driver.swipe(width // 5, height // 2, width * 4 // 5, height // 2, 0.3)
+
+
 def node_match(node: Node, by: By, value: str) -> bool:
     if by == By.ID:
         return node.properties.get("resource-id") == value
@@ -158,13 +205,78 @@ def node_match(node: Node, by: By, value: str) -> bool:
         return node.properties.get("text") == value
     if by == By.CLASS_NAME:
         return node.name == value
+    # XPath is handled separately in find_elements()
+    if by == By.XPATH:
+        raise ValueError("XPath matching should be done via find_elements() with XML parsing")
     raise ValueError(f"not support by {by!r}")
+
+
+def _xml_element_to_node(element: etree._Element, parent_path: str = "") -> Node:
+    """Convert lxml Element to Node object"""
+    properties = dict(element.attrib)
+
+    # Generate unique key based on tag and position
+    index = properties.get("index", "0")
+    resource_id = properties.get("resource-id", "")
+    if resource_id:
+        # Use resource-id if available
+        key = f"{parent_path}/{resource_id}"
+    else:
+        # Otherwise use tag and index
+        key = f"{parent_path}/{element.tag}[{index}]"
+
+    # Parse bounds: "[x1,y1][x2,y2]" -> [x1, y1, x2, y2]
+    bounds_str = properties.get("bounds", "")
+    bounds = None
+    if bounds_str:
+        try:
+            # Extract numbers from "[x1,y1][x2,y2]" format
+            import re
+            numbers = re.findall(r'\d+', bounds_str)
+            if len(numbers) == 4:
+                bounds = [int(n) for n in numbers]
+        except:
+            pass
+
+    # Create Node object
+    node = Node(
+        key=key,
+        name=element.tag,
+        properties=properties,
+        bounds=bounds,
+        children=[_xml_element_to_node(child, key) for child in element]
+    )
+
+    return node
 
 
 @register(Command.FIND_ELEMENTS)
 def find_elements(driver: BaseDriver, params: FindElementRequest) -> FindElementResponse:
-    _, root_node = driver.dump_hierarchy()
-    # TODO: support By.XPATH
+    source, root_node = driver.dump_hierarchy()
+
+    # Handle XPath queries via lxml
+    if params.by == By.XPATH:
+        try:
+            # Parse XML
+            root = etree.fromstring(source.encode('utf-8'))
+
+            # Execute XPath query
+            elements = root.xpath(params.value)
+
+            # Convert lxml Elements to Node objects
+            nodes = []
+            for elem in elements:
+                if isinstance(elem, etree._Element):
+                    node = _xml_element_to_node(elem)
+                    nodes.append(node)
+
+            return FindElementResponse(count=len(nodes), value=nodes)
+        except etree.XPathEvalError as e:
+            raise ValueError(f"Invalid XPath expression: {e}")
+        except Exception as e:
+            raise ValueError(f"XPath query failed: {e}")
+
+    # Handle non-XPath queries (ID, TEXT, CLASS_NAME)
     nodes = []
     for node in node_travel(root_node):
         if node_match(node, params.by, params.value):

@@ -108,3 +108,13 @@ class BaseDriver(abc.ABC):
     def clear_text(self):
         """ clear text input on device """
         raise NotImplementedError()
+
+    def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: float = 0.5):
+        """ swipe on the screen
+        :param start_x: start x coordinate
+        :param start_y: start y coordinate
+        :param end_x: end x coordinate
+        :param end_y: end y coordinate
+        :param duration: swipe duration in seconds
+        """
+        raise NotImplementedError()
