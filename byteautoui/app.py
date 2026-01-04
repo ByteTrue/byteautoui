@@ -26,6 +26,7 @@ from byteautoui.driver.android import ADBAndroidDriver, U2AndroidDriver
 from byteautoui.model import Node
 from byteautoui.provider import AndroidProvider, HarmonyProvider, IOSProvider
 from byteautoui.remote.scrcpy import ScrcpyServer
+from byteautoui.remote.goios_wda_server import GoIOSWDAServer
 from byteautoui.remote.ios_tunnel_manager import get_tunnel_manager
 from byteautoui.router.android import router as android_device_router
 from byteautoui.router.device import make_router
@@ -43,8 +44,15 @@ app = FastAPI()
 async def shutdown_event():
     """应用关闭时清理iOS tunnel和所有WDA进程"""
     logger.info("Shutting down ByteAutoUI...")
-    tunnel_manager = get_tunnel_manager()
-    tunnel_manager.cleanup()
+    try:
+        GoIOSWDAServer.cleanup_all()
+    except Exception:
+        logger.exception("Failed to cleanup go-ios WDA servers")
+    try:
+        tunnel_manager = get_tunnel_manager()
+        tunnel_manager.cleanup()
+    except Exception:
+        logger.exception("Failed to cleanup iOS tunnel manager")
     logger.info("Cleanup completed")
 
 app.add_middleware(

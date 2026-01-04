@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from byteautoui import command_proxy
 from byteautoui.command_types import Command, CurrentAppResponse, InstallAppRequest, InstallAppResponse, TapRequest
-from byteautoui.model import DeviceInfo, Node, ShellResponse
+from byteautoui.model import DeviceInfo, Node, ShellResponse, WindowSize
 from byteautoui.provider import BaseProvider
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,9 @@ def make_router(provider: BaseProvider) -> APIRouter:
             elif format == "json":
                 # 获取屏幕尺寸并包装返回数据
                 wsize = driver.window_size()
+                # 兼容旧 driver 返回 (w, h) tuple，避免直接 AttributeError 导致 500
+                if not hasattr(wsize, "width") or not hasattr(wsize, "height"):
+                    wsize = WindowSize(width=wsize[0], height=wsize[1])
                 return {
                     "key": hierarchy.key,
                     "name": hierarchy.name,

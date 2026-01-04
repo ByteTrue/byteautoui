@@ -8,7 +8,7 @@ import socket
 import subprocess
 import time
 import threading
-from typing import Optional, Dict
+from typing import Optional, Dict, Set
 
 from byteautoui.utils.ios_config import get_ios_config_manager
 from byteautoui.remote.ios_tunnel_manager import get_tunnel_manager
@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 # 全局设备启动锁字典，防止并发启动同一设备
 _device_locks: Dict[str, threading.Lock] = {}
 _locks_lock = threading.Lock()  # 保护_device_locks字典本身
+_active_servers_lock = threading.Lock()
+_active_servers: Set["GoIOSWDAServer"] = set()
 
 
 def _get_device_lock(udid: str) -> threading.Lock:
@@ -70,6 +72,22 @@ class GoIOSWDAServer:
             self._config_manager.set_wda_port(device_udid, wda_port)
 
         logger.info(f"GoIOSWDAServer initialized for {device_udid[:8]}... with bundle_id={self.wda_bundle_id}, port={self.wda_port}")
+        with _active_servers_lock:
+            _active_servers.add(self)
+
+    @classmethod
+    def cleanup_all(cls):
+        """应用退出时关闭所有由本进程创建的 WDA/forward 进程"""
+        with _active_servers_lock:
+            servers = list(_active_servers)
+        for server in servers:
+            try:
+                server.close()
+            except Exception:
+                logger.exception(
+                    "Failed to close GoIOSWDAServer for %s",
+                    getattr(server, "device_udid", "<unknown>"),
+                )
 
     def start(self):
         """
@@ -299,6 +317,8 @@ class GoIOSWDAServer:
         """
         清理WDA资源
         """
+        with _active_servers_lock:
+            _active_servers.discard(self)
         logger.info("Closing go-ios WDA server")
 
         # 关闭端口转发

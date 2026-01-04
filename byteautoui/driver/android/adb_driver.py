@@ -95,9 +95,9 @@ class ADBAndroidDriver(BaseDriver):
     def tap(self, x: int, y: int):
         self.adb_device.click(x, y)
 
-    def window_size(self) -> Tuple[int, int]:
+    def window_size(self) -> WindowSize:
         w, h = self.adb_device.window_size()
-        return (w, h)
+        return WindowSize(width=w, height=h)
 
     def app_install(self, app_path: str):
         self.adb_device.install(app_path)
