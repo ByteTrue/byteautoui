@@ -28,6 +28,77 @@ python -m byteautoui server
 
 访问 http://127.0.0.1:20242
 
+## iOS 支持
+
+### 前置要求
+
+1. **安装 go-ios** (必需)
+
+   ByteAutoUI 使用 go-ios 自动启动 WebDriverAgent (WDA)。
+
+   ```bash
+   # macOS (Homebrew)
+   brew install go-ios
+
+   # 其他平台：从 GitHub 下载预编译二进制
+   # https://github.com/danielpaulus/go-ios/releases
+   ```
+
+   验证安装:
+   ```bash
+   ios version
+   ```
+
+2. **部署 WebDriverAgent 到设备**
+
+   需要手动将 WDA 安装到 iOS 设备（仅需一次）:
+
+   - 使用 Xcode 打开 WebDriverAgent.xcodeproj
+   - 修改 Bundle ID（例如: `com.yourname.WebDriverAgentRunner.xctrunner`）
+   - 在真机上运行 WebDriverAgentRunner target
+   - 信任开发者证书
+
+   详细步骤: https://appium.io/docs/en/latest/drivers/ios-xcuitest-driver/#webdriveragent
+
+### 使用方法
+
+1. **首次连接设备**
+
+   启动 ByteAutoUI 后选择 iOS 设备，首次使用会提示配置 WDA Bundle ID。
+
+2. **配置 WDA**
+
+   在配置对话框中输入你的 WDA Bundle ID，例如:
+   ```
+   com.yourname.WebDriverAgentRunner.xctrunner
+   ```
+
+   配置会自动保存到 `~/.byteautoui/ios_config.json`，下次无需重新输入。
+
+3. **自动启动**
+
+   配置完成后，ByteAutoUI 会自动:
+   - 启动 go-ios tunnel（iOS 17+ 需要）
+   - 启动 WDA 服务
+   - 建立端口转发 (8100:8100)
+
+### 故障排查
+
+**WDA 启动失败**
+- 检查 WDA 是否已安装: 在设备主屏幕查看是否有 WebDriverAgentRunner 图标
+- 验证 Bundle ID 是否正确
+- 确认开发者证书已信任
+- 查看日志: `ios runwda --bundleid=<your-bundle-id> --udid=<device-udid>`
+
+**设备未识别**
+- 检查 USB 连接
+- 运行 `ios list` 确认设备可见
+- iOS 17+ 需要开启开发者模式
+
+**端口冲突**
+- 默认端口 8100 被占用时，可在配置对话框修改 WDA 端口
+- 或手动编辑 `~/.byteautoui/ios_config.json`
+
 ## 功能特性
 
 - **多平台支持**：Android（ADB/uiautomator2）、iOS（WDA）、Harmony（hypium）
@@ -92,7 +163,7 @@ taskkill /F /PID <PID>
 
 **设备连接失败**
 - Android：检查 `adb devices`，确认设备授权
-- iOS：确认 WDA 已启动
+- iOS：确认已安装 go-ios 和 WDA，检查配置对话框中的 Bundle ID
 - Harmony：安装 `hypium` 依赖
 
 ## 许可证
