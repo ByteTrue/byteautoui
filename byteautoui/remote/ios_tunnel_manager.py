@@ -101,8 +101,7 @@ class IOSTunnelManager:
                 text=True
             )
 
-            # 等待tunnel启动
-            time.sleep(3)
+            time.sleep(0.2)
 
             if process.poll() is not None:
                 # 进程已退出，读取错误

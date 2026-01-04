@@ -95,43 +95,69 @@ class GoIOSWDAServer:
 
         流程：
         1. 启动go-ios tunnel (使用全局单例，多设备共享)
-        2. 启动WDA
-        3. 端口转发
-        4. 等待端口ready
+        2. 端口转发
+        3. 检查WDA是否已可用
+        4. 必要时启动WDA并等待ready
         """
         # 获取设备锁，防止并发启动
         device_lock = _get_device_lock(self.device_udid)
 
         with device_lock:
-            # 检查WDA是否真正运行（检查/status端点）
             if self._is_wda_running():
                 logger.info(f"WDA already running on port {self.wda_port}")
                 return
 
-            # 如果端口被占用但WDA没运行，清理残留进程
-            if self._is_port_open(self.wda_port, timeout=0.5):
-                logger.warning(f"Port {self.wda_port} is occupied but WDA is not responding, cleaning up...")
-                self._cleanup_stale_processes()
-                time.sleep(2)
-
+            start_time = time.time()
             logger.info(f"Starting WDA for device {self.device_udid} using go-ios")
 
             try:
                 # 步骤1: 启动tunnel (针对该设备)
+                tunnel_time = time.time()
                 if not self._tunnel_manager.start_tunnel(self.device_udid):
                     raise RuntimeError(f"Failed to start tunnel for device {self.device_udid}")
+                tunnel_cost = time.time() - tunnel_time
 
-                # 步骤2: 启动WDA
-                self._start_wda()
+                # 如果端口被占用但WDA没运行，清理残留进程
+                if self._is_port_open(self.wda_port, timeout=0.5) and not self._is_wda_running():
+                    logger.warning(
+                        f"Port {self.wda_port} is occupied but WDA is not responding, cleaning up..."
+                    )
+                    self._cleanup_stale_processes()
+                    self._wait_for_port_close(timeout=2)
 
-                # 步骤3: 端口转发
+                # 步骤2: 端口转发
+                forward_time = time.time()
                 self._start_port_forward()
+                forward_cost = time.time() - forward_time
 
-                # 步骤4: 等待端口ready
-                if not self._wait_for_port(timeout=30):
-                    raise RuntimeError(f"WDA failed to start within 30 seconds on port {self.wda_port}")
+                # 步骤3: 快速检查：WDA已可用则直接复用
+                if self._wait_for_wda_ready(timeout=2):
+                    logger.info(
+                        "WDA already running on port %s (tunnel %.2fs, forward %.2fs, total %.2fs)",
+                        self.wda_port,
+                        tunnel_cost,
+                        forward_cost,
+                        time.time() - start_time,
+                    )
+                    return
 
-                logger.info(f"WDA started successfully on port {self.wda_port}")
+                # 步骤4: 启动WDA并等待ready
+                wda_time = time.time()
+                self._start_wda()
+                if not self._wait_for_wda_ready(timeout=30):
+                    raise RuntimeError(
+                        f"WDA failed to start within 30 seconds on port {self.wda_port}"
+                    )
+                wda_ready_cost = time.time() - wda_time
+
+                logger.info(
+                    "WDA started successfully on port %s (tunnel %.2fs, forward %.2fs, ready %.2fs, total %.2fs)",
+                    self.wda_port,
+                    tunnel_cost,
+                    forward_cost,
+                    wda_ready_cost,
+                    time.time() - start_time,
+                )
 
             except Exception as e:
                 self.close()
@@ -139,6 +165,8 @@ class GoIOSWDAServer:
 
     def _start_wda(self):
         """启动WDA"""
+        if self._wda_process and self._wda_process.poll() is None:
+            return
         logger.info(f"Starting WDA with bundle ID: {self.wda_bundle_id}")
 
         cmd = [
@@ -157,8 +185,7 @@ class GoIOSWDAServer:
             text=True
         )
 
-        # 等待WDA初始化
-        time.sleep(5)
+        time.sleep(0.2)
 
         if self._wda_process.poll() is not None:
             # 进程已退出，读取错误
@@ -180,6 +207,8 @@ class GoIOSWDAServer:
 
     def _start_port_forward(self):
         """启动端口转发"""
+        if self._forward_process and self._forward_process.poll() is None:
+            return
         logger.info(f"Starting port forward {self.wda_port}:{self.wda_port}")
 
         cmd = [
@@ -197,8 +226,7 @@ class GoIOSWDAServer:
             text=True
         )
 
-        # 等待转发建立
-        time.sleep(2)
+        time.sleep(0.2)
 
         if self._forward_process.poll() is not None:
             _, stderr = self._forward_process.communicate()
@@ -247,23 +275,37 @@ class GoIOSWDAServer:
             except:
                 pass
 
-    def _wait_for_port(self, timeout: float = 30) -> bool:
-        """等待WDA端口ready"""
+    def _wait_for_port_close(self, timeout: float = 2) -> bool:
+        """等待端口释放"""
         start = time.time()
-        logger.debug(f"Waiting for WDA port {self.wda_port}...")
+        while time.time() - start < timeout:
+            if not self._is_port_open(self.wda_port, timeout=0.1):
+                return True
+            time.sleep(0.1)
+        return False
+
+    def _wait_for_wda_ready(self, timeout: float = 30) -> bool:
+        """等待WDA ready（/status 可用）"""
+        start = time.time()
+        logger.debug(f"Waiting for WDA ready on port {self.wda_port}...")
 
         while time.time() - start < timeout:
             # 检查进程是否还在运行
+            if self._forward_process and self._forward_process.poll() is not None:
+                _, stderr = self._forward_process.communicate()
+                logger.error(f"Port forward process died: {stderr}")
+                return False
+
             if self._wda_process and self._wda_process.poll() is not None:
                 stdout, stderr = self._wda_process.communicate()
                 logger.error(f"WDA process died: {stderr or stdout}")
                 return False
 
-            if self._is_port_open(self.wda_port, timeout=0.5):
+            if self._is_wda_running():
                 logger.info(f"WDA ready on port {self.wda_port}")
                 return True
 
-            time.sleep(0.5)
+            time.sleep(0.2)
 
         return False
 

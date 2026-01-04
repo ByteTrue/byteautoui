@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import abc
+import threading
 from functools import lru_cache
-from typing import Type
+from typing import Optional, Type
 
 import adbutils
 
@@ -75,18 +76,37 @@ class IOSProvider(BaseProvider):
         """
         self.wda_bundle_id = wda_bundle_id
         self.wda_port = wda_port
+        self._drivers: dict[str, IOSDriver] = {}
+        self._driver_locks: dict[str, threading.Lock] = {}
+        self._driver_locks_lock = threading.Lock()
 
     def list_devices(self) -> list[DeviceInfo]:
         devs = list_devices()
         return [DeviceInfo(serial=d.serial, model="unknown", name="unknown") for d in devs]
 
-    @lru_cache
     def get_device_driver(self, serial: str) -> BaseDriver:
-        return IOSDriver(
-            serial=serial,
-            wda_bundle_id=self.wda_bundle_id,
-            wda_port=self.wda_port
-        )
+        driver = self._drivers.get(serial)
+        if driver is not None:
+            return driver
+        with self._get_driver_lock(serial):
+            driver = self._drivers.get(serial)
+            if driver is not None:
+                return driver
+            driver = IOSDriver(
+                serial=serial,
+                wda_bundle_id=self.wda_bundle_id,
+                wda_port=self.wda_port,
+            )
+            self._drivers[serial] = driver
+            return driver
+
+    def _get_driver_lock(self, serial: str) -> threading.Lock:
+        with self._driver_locks_lock:
+            lock = self._driver_locks.get(serial)
+            if lock is None:
+                lock = threading.Lock()
+                self._driver_locks[serial] = lock
+            return lock
 
 
 class HarmonyProvider(BaseProvider):
