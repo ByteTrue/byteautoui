@@ -20,6 +20,18 @@ from byteautoui.provider import BaseProvider
 logger = logging.getLogger(__name__)
 
 
+class IOSConfigRequest(BaseModel):
+    """iOS设备配置请求"""
+    wda_bundle_id: Optional[str] = None
+    wda_port: Optional[int] = None
+
+
+class IOSConfigResponse(BaseModel):
+    """iOS设备配置响应"""
+    wda_bundle_id: str
+    wda_port: int
+
+
 def make_router(provider: BaseProvider) -> APIRouter:
     router = APIRouter()
 
@@ -61,7 +73,18 @@ def make_router(provider: BaseProvider) -> APIRouter:
             if format == "xml":
                 return Response(content=xml_data, media_type="text/xml")
             elif format == "json":
-                return hierarchy
+                # 获取屏幕尺寸并包装返回数据
+                wsize = driver.window_size()
+                return {
+                    "key": hierarchy.key,
+                    "name": hierarchy.name,
+                    "bounds": hierarchy.bounds,
+                    "rect": hierarchy.rect,
+                    "properties": hierarchy.properties,
+                    "children": hierarchy.children,
+                    "width": wsize.width,
+                    "height": wsize.height,
+                }
             else:
                 return Response(content=f"Invalid format: {format}", media_type="text/plain", status_code=400)
         except Exception as e:
@@ -98,7 +121,7 @@ def make_router(provider: BaseProvider) -> APIRouter:
     @router.get('/{serial}/backupApp')
     def _backup_app(serial: str, packageName: str):
         """Backup app
-        
+
         Added in 0.5.0
         """
         driver = provider.get_device_driver(serial)
@@ -107,7 +130,43 @@ def make_router(provider: BaseProvider) -> APIRouter:
             'Content-Disposition': f'attachment; filename="{file_name}"'
         }
         return StreamingResponse(driver.open_app_file(packageName), headers=headers)
-        
 
+    # iOS特定路由 - 配置管理
+    @router.get('/{serial}/ios-config')
+    def get_ios_config(serial: str) -> IOSConfigResponse:
+        """获取iOS设备的WDA配置"""
+        try:
+            from byteautoui.utils.ios_config import get_ios_config_manager
+            config_manager = get_ios_config_manager()
+            config = config_manager.get_device_config(serial)
+            return IOSConfigResponse(
+                wda_bundle_id=config['wda_bundle_id'],
+                wda_port=config['wda_port']
+            )
+        except Exception as e:
+            logger.exception("get_ios_config failed")
+            return Response(content=str(e), media_type="text/plain", status_code=500)
+
+    @router.post('/{serial}/ios-config')
+    def set_ios_config(serial: str, config: IOSConfigRequest) -> IOSConfigResponse:
+        """设置iOS设备的WDA配置"""
+        try:
+            from byteautoui.utils.ios_config import get_ios_config_manager
+            config_manager = get_ios_config_manager()
+
+            if config.wda_bundle_id:
+                config_manager.set_wda_bundle_id(serial, config.wda_bundle_id)
+            if config.wda_port:
+                config_manager.set_wda_port(serial, config.wda_port)
+
+            # 返回更新后的配置
+            updated_config = config_manager.get_device_config(serial)
+            return IOSConfigResponse(
+                wda_bundle_id=updated_config['wda_bundle_id'],
+                wda_port=updated_config['wda_port']
+            )
+        except Exception as e:
+            logger.exception("set_ios_config failed")
+            return Response(content=str(e), media_type="text/plain", status_code=500)
 
     return router
