@@ -200,9 +200,11 @@ def swipe_right(driver: BaseDriver):
 
 def node_match(node: Node, by: By, value: str) -> bool:
     if by == By.ID:
-        return node.properties.get("resource-id") == value
+        return node.properties.get("resource-id") == value or node.properties.get("label") == value
     if by == By.TEXT:
-        return node.properties.get("text") == value
+        return node.properties.get("text") == value or node.properties.get("label") == value
+    if by == By.LABEL:
+        return node.properties.get("label") == value
     if by == By.CLASS_NAME:
         return node.name == value
     # XPath is handled separately in find_elements()
@@ -305,4 +307,3 @@ def click_element(driver: BaseDriver, params: FindElementRequest):
 def app_list(driver: BaseDriver) -> List[AppInfo]:
     # added in v0.5.0
     return driver.app_list()
-

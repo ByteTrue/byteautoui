@@ -90,6 +90,7 @@ class DumpResponse(BaseModel):
 class By(str, enum.Enum):
     ID = "id"
     TEXT = "text"
+    LABEL = "label"
     XPATH = "xpath"
     CLASS_NAME = "className"
 
