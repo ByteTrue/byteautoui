@@ -101,6 +101,52 @@ def ios(command: Command, params: list[str] = None):
     run_driver_command(provider, command, params)
 
 
+@cli.group(help="iOS device configuration management")
+def ios_config():
+    """iOS设备配置管理"""
+    pass
+
+
+@ios_config.command('list-devices')
+def ios_list_devices():
+    """列出所有iOS设备"""
+    from byteautoui.cli_ios_config import list_devices
+    list_devices.callback()
+
+
+@ios_config.command('set-wda-bundle-id')
+@click.argument('device_udid')
+@click.argument('bundle_id')
+def ios_set_wda_bundle_id(device_udid: str, bundle_id: str):
+    """设置设备的WDA bundle ID"""
+    from byteautoui.cli_ios_config import set_wda_bundle_id
+    set_wda_bundle_id.callback(device_udid, bundle_id)
+
+
+@ios_config.command('show-config')
+@click.argument('device_udid')
+def ios_show_config(device_udid: str):
+    """显示设备的配置"""
+    from byteautoui.cli_ios_config import show_config
+    show_config.callback(device_udid)
+
+
+@ios_config.command('show-all')
+def ios_show_all_configs():
+    """显示所有设备的配置"""
+    from byteautoui.cli_ios_config import show_all_configs
+    show_all_configs.callback()
+
+
+@ios_config.command('clear')
+@click.argument('device_udid')
+@click.confirmation_option(prompt='Are you sure you want to clear this device config?')
+def ios_clear_config(device_udid: str):
+    """清除设备的配置"""
+    from byteautoui.cli_ios_config import clear_config
+    clear_config.callback(device_udid)
+
+
 @cli.command(help="run case (beta)")
 def case():
     from byteautoui.case import run
