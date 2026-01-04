@@ -17,14 +17,32 @@ from byteautoui.command_types import CurrentAppResponse
 from byteautoui.driver.base_driver import BaseDriver
 from byteautoui.exceptions import IOSDriverException
 from byteautoui.model import Node, WindowSize
+from byteautoui.remote.goios_wda_server import GoIOSWDAServer
 from byteautoui.utils.usbmux import select_device
 
 
 class IOSDriver(BaseDriver):
-    def __init__(self, serial: str):
-        """ serial is the udid of the ios device """
+    def __init__(self, serial: str, auto_start_wda: bool = True, wda_bundle_id: Optional[str] = None, wda_port: Optional[int] = None):
+        """
+        serial is the udid of the ios device
+        auto_start_wda: 是否自动启动WDA（默认True）
+        wda_bundle_id: WDA的bundle ID，如果为None则从配置读取或使用默认值
+                      首次指定后会自动保存，下次自动使用
+        wda_port: WDA端口，如果为None则从配置读取或使用8100
+        """
         super().__init__(serial)
         self.device = select_device(serial)
+
+        # 新增：WDA生命周期管理（类似ScrcpyServer）
+        self._wda_server: Optional[GoIOSWDAServer] = None
+        if auto_start_wda:
+            self._wda_server = GoIOSWDAServer(
+                device_udid=self.device.serial,
+                wda_bundle_id=wda_bundle_id,
+                wda_port=wda_port
+            )
+            self._wda_server.start()
+
         self.wda = wdapy.AppiumUSBClient(self.device.serial)
     
     def _request(self, method: str, path: str, payload: Optional[dict] = None) -> bytes:
@@ -57,15 +75,19 @@ class IOSDriver(BaseDriver):
     def screenshot(self, id: int = 0) -> Image.Image:
         return self.wda.screenshot()
     
-    def window_size(self):
-        return self.wda.window_size()
+    def window_size(self) -> WindowSize:
+        # wda.window_size() 返回 tuple (width, height)，需要转换为 WindowSize
+        w, h = self.wda.window_size()
+        return WindowSize(width=w, height=h)
     
     def dump_hierarchy(self) -> Tuple[str, Node]:
         """returns xml string and hierarchy object"""
         t = self.wda.sourcetree()
         xml_data = t.value
         root = ElementTree.fromstring(xml_data)
-        return xml_data, parse_xml_element(root, WindowSize(width=1, height=1))
+        # 获取真实的屏幕尺寸（从根节点的width/height属性）
+        wsize = self.window_size()
+        return xml_data, parse_xml_element(root, wsize)
     
     def tap(self, x: int, y: int):
         self.wda.tap(x, y)
@@ -85,7 +107,17 @@ class IOSDriver(BaseDriver):
     
     def volume_down(self):
         self.wda.volume_down()
-        
+
+    def close(self):
+        """清理WDA资源（类似ScrcpyServer.close）"""
+        if self._wda_server:
+            self._wda_server.close()
+            self._wda_server = None
+
+    def __del__(self):
+        """析构时自动清理"""
+        self.close()
+
 
 def parse_xml_element(element, wsize: WindowSize, indexes: List[int]=[0]) -> Node:
     """

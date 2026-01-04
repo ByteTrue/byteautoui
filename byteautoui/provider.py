@@ -67,13 +67,26 @@ class AndroidProvider(BaseProvider):
 
 
 class IOSProvider(BaseProvider):
+    def __init__(self, wda_bundle_id: Optional[str] = None, wda_port: Optional[int] = None):
+        """
+        Args:
+            wda_bundle_id: 全局默认的WDA bundle ID，会应用到所有设备（除非设备有自己的配置）
+            wda_port: 全局默认的WDA端口
+        """
+        self.wda_bundle_id = wda_bundle_id
+        self.wda_port = wda_port
+
     def list_devices(self) -> list[DeviceInfo]:
         devs = list_devices()
         return [DeviceInfo(serial=d.serial, model="unknown", name="unknown") for d in devs]
 
     @lru_cache
     def get_device_driver(self, serial: str) -> BaseDriver:
-        return IOSDriver(serial)
+        return IOSDriver(
+            serial=serial,
+            wda_bundle_id=self.wda_bundle_id,
+            wda_port=self.wda_port
+        )
 
 
 class HarmonyProvider(BaseProvider):

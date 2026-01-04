@@ -26,6 +26,7 @@ from byteautoui.driver.android import ADBAndroidDriver, U2AndroidDriver
 from byteautoui.model import Node
 from byteautoui.provider import AndroidProvider, HarmonyProvider, IOSProvider
 from byteautoui.remote.scrcpy import ScrcpyServer
+from byteautoui.remote.ios_tunnel_manager import get_tunnel_manager
 from byteautoui.router.android import router as android_device_router
 from byteautoui.router.device import make_router
 # from byteautoui.router.proxy import router as proxy_router  # 不再需要代理路由
@@ -36,6 +37,15 @@ from byteautoui.utils.envutils import Environment
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# 注册应用关闭事件，清理iOS tunnel和WDA进程
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理iOS tunnel和所有WDA进程"""
+    logger.info("Shutting down ByteAutoUI...")
+    tunnel_manager = get_tunnel_manager()
+    tunnel_manager.cleanup()
+    logger.info("Cleanup completed")
 
 app.add_middleware(
     CORSMiddleware,
