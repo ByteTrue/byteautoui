@@ -58,6 +58,7 @@ export interface UINode {
   key: string
   index?: number
   text?: string
+  label?: string
   resource_id?: string
   class_name?: string
   package?: string
@@ -103,13 +104,24 @@ export interface TapRequest {
 // 平台类型
 export type Platform = 'android' | 'ios' | 'harmony'
 
+// iOS 配置
+export interface IOSConfig {
+  wda_bundle_id: string
+  wda_port: number
+}
+
 // 转换原始节点为 UINode
 export function convertRawNode(raw: RawUINode): UINode {
   const props = raw.properties || {}
 
-  // 解析 bounds 字符串 "[0,0][100,100]" 为数组
+  // 解析 bounds：优先使用API直接返回的bounds数组（iOS），否则从rect或字符串解析（Android）
   let boundsArray: [number, number, number, number] | undefined
-  if (raw.rect) {
+
+  if (raw.bounds) {
+    // iOS：API直接返回bounds数组（归一化坐标0-1）
+    boundsArray = raw.bounds
+  } else if (raw.rect) {
+    // Android (U2)：从rect转换为bounds数组（像素坐标）
     boundsArray = [
       raw.rect.x,
       raw.rect.y,
@@ -117,6 +129,7 @@ export function convertRawNode(raw: RawUINode): UINode {
       raw.rect.y + raw.rect.height,
     ]
   } else if (props.bounds) {
+    // Android (ADB)：解析bounds字符串 "[0,0][100,100]"
     const match = props.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)
     if (match && match[1] && match[2] && match[3] && match[4]) {
       boundsArray = [
@@ -132,6 +145,7 @@ export function convertRawNode(raw: RawUINode): UINode {
     key: raw.key,
     index: props.index ? parseInt(props.index) : undefined,
     text: props.text || undefined,
+    label: props.label || undefined,
     resource_id: props['resource-id'] || undefined,
     class_name: props.class || raw.name || undefined,
     package: props.package || undefined,
@@ -153,23 +167,31 @@ export function convertRawNode(raw: RawUINode): UINode {
   }
 }
 
+// API 返回的根节点（带width/height字段）
+export interface RawHierarchyRoot extends RawUINode {
+  width: number
+  height: number
+}
+
 // 从原始 API 响应转换为 HierarchyData
-export function convertRawHierarchy(raw: RawUINode): HierarchyData {
-  // 从根节点获取屏幕尺寸（找最大的 right 和 bottom 值）
-  let width = 0
-  let height = 0
+export function convertRawHierarchy(raw: RawHierarchyRoot): HierarchyData {
+  // 使用API返回的width和height（优先），如果不存在则从节点推断（向后兼容Android旧版本）
+  let width = raw.width || 0
+  let height = raw.height || 0
 
-  function findScreenSize(node: RawUINode): void {
-    if (node.rect) {
-      const right = node.rect.x + node.rect.width
-      const bottom = node.rect.y + node.rect.height
-      if (right > width) width = right
-      if (bottom > height) height = bottom
+  // 如果API没有返回width/height，尝试从节点推断（Android旧逻辑）
+  if (!width || !height) {
+    function findScreenSize(node: RawUINode): void {
+      if (node.rect) {
+        const right = node.rect.x + node.rect.width
+        const bottom = node.rect.y + node.rect.height
+        if (right > width) width = right
+        if (bottom > height) height = bottom
+      }
+      node.children?.forEach(findScreenSize)
     }
-    node.children?.forEach(findScreenSize)
+    findScreenSize(raw)
   }
-
-  findScreenSize(raw)
 
   // 获取 rotation
   const rotation = raw.properties?.rotation ? parseInt(raw.properties.rotation) : 0

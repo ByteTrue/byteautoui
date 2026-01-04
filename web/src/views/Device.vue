@@ -41,12 +41,13 @@ import { useDeviceStore } from '@/stores/device'
 import { useThemeStore } from '@/stores/theme'
 import { useI18nStore } from '@/stores/i18n'
 import type { Platform, UINode } from '@/api/types'
-import { sendCommand, tap } from '@/api'
+import { sendCommand, tap, setIOSConfig } from '@/api'
 import ScreenPanel from '@/components/ScreenPanel.vue'
 import HierarchyPanel from '@/components/panels/HierarchyPanel.vue'
 import ActionsPanel from '@/components/panels/ActionsPanel.vue'
 import PackagePanel from '@/components/panels/PackagePanel.vue'
 import DeviceSelector from '@/components/DeviceSelector.vue'
+import IOSConfigDialog from '@/components/dialogs/IOSConfigDialog.vue'
 
 const props = defineProps<{
   platform: Platform
@@ -64,6 +65,10 @@ const actionsPanelRef = ref<InstanceType<typeof ActionsPanel> | null>(null)
 
 const activeTab = ref('hierarchy')
 const showDeviceSelector = ref(false)
+
+// iOS WDA配置对话框
+const showIOSConfigDialog = ref(false)
+const iosConfigError = ref<string | undefined>(undefined)
 
 // 国际化文本
 const t = computed(() => i18nStore.t.device)
@@ -126,8 +131,22 @@ const volumeMute = () => executeCommand('volumeMute', {}, 'Volume muted', 'Volum
 // P1 Advanced Functions
 const inputText = ref('')
 
-// XPath selector (默认选择id，因为最精确)
-const xpathSelector = ref('id')
+// XPath selector (Android 默认 id；iOS 默认 class_and_label)
+const xpathSelector = ref(props.platform === 'ios' ? 'class_and_label' : 'id')
+
+watch(
+  () => props.platform,
+  (platform) => {
+    const validSelectors = platform === 'ios'
+      ? new Set(['label', 'class', 'class_and_label'])
+      : new Set(['id', 'text', 'class', 'class_and_text'])
+
+    if (!validSelectors.has(xpathSelector.value)) {
+      xpathSelector.value = platform === 'ios' ? 'class_and_label' : 'id'
+    }
+  },
+  { immediate: true }
+)
 
 // Generate XPath based on selector type
 const generateXPath = (type: string, node: UINode | null): string => {
@@ -140,9 +159,15 @@ const generateXPath = (type: string, node: UINode | null): string => {
       return node.content_desc ? `//*[@content-desc="${node.content_desc}"]` : ''
     case 'text':
       return node.text ? `//*[@text="${node.text}"]` : ''
+    case 'label':
+      return node.label ? `//*[@label="${node.label}"]` : ''
     case 'class_and_text':
       return node.class_name && node.text
         ? `//${node.class_name}[@text="${node.text}"]`
+        : ''
+    case 'class_and_label':
+      return node.class_name && node.label
+        ? `//${node.class_name}[@label="${node.label}"]`
         : ''
     case 'class':
       return node.class_name ? `//${node.class_name}` : ''
@@ -173,29 +198,47 @@ const xpathSelectorOptions = computed(() => {
     return count
   }
 
-  // 按精确度排序：id > class_and_text > class > text
-  const options = [
-    {
-      label: 'id',
-      value: 'id',
-      xpath: generateXPath('id', node),
-    },
-    {
-      label: 'class_and_text',
-      value: 'class_and_text',
-      xpath: generateXPath('class_and_text', node),
-    },
-    {
-      label: 'class',
-      value: 'class',
-      xpath: generateXPath('class', node),
-    },
-    {
-      label: 'text',
-      value: 'text',
-      xpath: generateXPath('text', node),
-    },
-  ]
+  // 按精确度排序：Android(id > class_and_text > class > text) / iOS(class_and_label > label > class)
+  const options = props.platform === 'ios'
+    ? [
+      {
+        label: 'class_and_label',
+        value: 'class_and_label',
+        xpath: generateXPath('class_and_label', node),
+      },
+      {
+        label: 'label',
+        value: 'label',
+        xpath: generateXPath('label', node),
+      },
+      {
+        label: 'class',
+        value: 'class',
+        xpath: generateXPath('class', node),
+      },
+    ]
+    : [
+      {
+        label: 'id',
+        value: 'id',
+        xpath: generateXPath('id', node),
+      },
+      {
+        label: 'class_and_text',
+        value: 'class_and_text',
+        xpath: generateXPath('class_and_text', node),
+      },
+      {
+        label: 'class',
+        value: 'class',
+        xpath: generateXPath('class', node),
+      },
+      {
+        label: 'text',
+        value: 'text',
+        xpath: generateXPath('text', node),
+      },
+    ]
 
   // Add count for each option
   return options.map(opt => ({
@@ -345,6 +388,7 @@ function getRawProperties(node: UINode): Record<string, string> {
   // 按照原版格式构造
   if (node.index !== undefined) raw.index = String(node.index)
   if (node.text) raw.text = node.text
+  if (node.label) raw.label = node.label
   if (node.resource_id) raw['resource-id'] = node.resource_id
   if (node.class_name) raw.class = node.class_name
   if (node.package) raw.package = node.package
@@ -386,6 +430,7 @@ const propertyDetails = computed<PropertyDetail[]>(() => {
   // 基础属性
   if (node.index !== undefined) details.push({ label: 'index', value: node.index })
   if (node.text) details.push({ label: 'text', value: node.text })
+  if (node.label) details.push({ label: 'label', value: node.label })
   if (node.resource_id) details.push({ label: 'resource-id', value: node.resource_id })
   if (node.class_name) details.push({ label: 'class', value: node.class_name })
   if (node.package) details.push({ label: 'package', value: node.package })
@@ -493,6 +538,18 @@ async function tapElement() {
 // Refresh hierarchy
 async function refresh() {
   await store.refreshHierarchy()
+
+  // 检查store.error - iOS WDA启动失败时显示配置对话框
+  if (store.error && props.platform === 'ios') {
+    const errorMsg = store.error
+    // 检查是否是WDA相关错误
+    if (errorMsg.includes('InvalidService') || errorMsg.includes('WDA') || errorMsg.includes('WebDriverAgent')) {
+      iosConfigError.value = errorMsg
+      showIOSConfigDialog.value = true
+      return
+    }
+  }
+
   // Also refresh current activity
   try {
     const result = await sendCommand(props.platform, props.serial, 'currentApp', {})
@@ -501,6 +558,24 @@ async function refresh() {
     }
   } catch (error) {
     // Ignore error, activity display is optional
+  }
+}
+
+// 处理iOS配置保存
+async function handleIOSConfigConfirm(bundleId: string, port: number) {
+  try {
+    await setIOSConfig(props.serial, {
+      wda_bundle_id: bundleId,
+      wda_port: port
+    })
+    message.success('配置已保存')
+    // 关闭对话框
+    showIOSConfigDialog.value = false
+    iosConfigError.value = undefined
+    // 重新尝试刷新
+    await refresh()
+  } catch (error) {
+    message.error(`保存配置失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -937,6 +1012,14 @@ const swipeRight = () => executeCommand('swipeRight', {}, 'Swiped right', 'Swipe
     <DeviceSelector
       v-model:show="showDeviceSelector"
       @select="handleDeviceSelect"
+    />
+
+    <!-- iOS WDA Config Dialog -->
+    <IOSConfigDialog
+      v-model:show="showIOSConfigDialog"
+      :serial="serial"
+      :error-message="iosConfigError"
+      @confirm="handleIOSConfigConfirm"
     />
   </div>
 </template>

@@ -132,6 +132,7 @@ export function useRecorder(
 
     return {
       text: node.text,
+      label: node.label,
       resource_id: node.resource_id,
       class_name: node.class_name,
       content_desc: node.content_desc,

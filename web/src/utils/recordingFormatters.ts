@@ -49,11 +49,12 @@ export function formatDate(timestamp: number): string {
 }
 
 /**
- * 格式化元素描述(优先级: text > content_desc > resource_id > class_name)
+ * 格式化元素描述(优先级: text > label > content_desc > resource_id > class_name)
  */
 export function formatElementDesc(element: ElementInfo | undefined): string | null {
   if (!element) return null
   if (element.text) return `文本: "${element.text}"`
+  if (element.label) return `label: "${element.label}"`
   if (element.content_desc) return `描述: "${element.content_desc}"`
   if (element.resource_id) return `ID: ${element.resource_id.split('/').pop()}`
   if (element.class_name) return `类: ${element.class_name.split('.').pop()}`

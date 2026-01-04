@@ -1,4 +1,4 @@
-import type { DeviceInfo, AppInfo, HierarchyData, CurrentAppResponse, TapRequest, Platform, RawUINode } from './types'
+import type { DeviceInfo, AppInfo, HierarchyData, CurrentAppResponse, TapRequest, Platform, RawHierarchyRoot } from './types'
 import { convertRawHierarchy } from './types'
 
 const API_BASE = '/api'
@@ -35,7 +35,7 @@ export function getScreenshotUrl(platform: Platform, serial: string): string {
 
 // 获取 UI 层级
 export async function getHierarchy(platform: Platform, serial: string): Promise<HierarchyData> {
-  const raw = await request<RawUINode>(`${API_BASE}/${platform}/${serial}/hierarchy`)
+  const raw = await request<RawHierarchyRoot>(`${API_BASE}/${platform}/${serial}/hierarchy`)
   return convertRawHierarchy(raw)
 }
 
@@ -69,6 +69,18 @@ export async function sendCommand(
 // 获取平台功能
 export async function getFeatures(platform: Platform): Promise<Record<string, boolean>> {
   return request<Record<string, boolean>>(`${API_BASE}/${platform}/features`)
+}
+
+// iOS 配置管理
+export async function getIOSConfig(serial: string): Promise<import('./types').IOSConfig> {
+  return request<import('./types').IOSConfig>(`${API_BASE}/ios/${serial}/ios-config`)
+}
+
+export async function setIOSConfig(serial: string, config: Partial<import('./types').IOSConfig>): Promise<import('./types').IOSConfig> {
+  return request<import('./types').IOSConfig>(`${API_BASE}/ios/${serial}/ios-config`, {
+    method: 'POST',
+    body: JSON.stringify(config),
+  })
 }
 
 export * from './types'

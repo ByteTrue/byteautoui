@@ -52,10 +52,11 @@
         <div class="result-index">{{ index + 1 }}</div>
         <div class="result-content">
           <div class="result-primary">
-            {{ result.text || result.resource_id || result.class_name || `${t.noElement} ${index + 1}` }}
+            {{ result.text || result.label || result.resource_id || result.class_name || `${t.noElement} ${index + 1}` }}
           </div>
           <div class="result-secondary">
             <span v-if="result.resource_id" class="result-tag">{{ result.resource_id }}</span>
+            <span v-if="result.label" class="result-tag">{{ result.label }}</span>
             <span v-if="result.class_name" class="result-tag">{{ result.class_name }}</span>
           </div>
         </div>
@@ -107,15 +108,42 @@ const t = computed(() => i18nStore.t.hierarchy)
 const hierarchySearch = ref('')
 const searchResults = ref<UINode[]>([])
 const searchLoading = ref(false)
-const searchType = ref<'text' | 'xpath' | 'id' | 'className'>('text')
+const searchType = ref<'text' | 'label' | 'xpath' | 'id' | 'className'>(
+  props.platform === 'ios' ? 'label' : 'text'
+)
 
 // 搜索类型选项
-const searchTypeOptions = computed(() => [
-  { label: t.value.searchType.text, value: 'text' },
-  { label: t.value.searchType.xpath, value: 'xpath' },
-  { label: t.value.searchType.id, value: 'id' },
-  { label: t.value.searchType.className, value: 'className' },
-])
+const searchTypeOptions = computed(() => {
+  if (props.platform === 'ios') {
+    return [
+      { label: t.value.searchType.label, value: 'label' },
+      { label: t.value.searchType.xpath, value: 'xpath' },
+      { label: t.value.searchType.className, value: 'className' },
+    ]
+  }
+  return [
+    { label: t.value.searchType.text, value: 'text' },
+    { label: t.value.searchType.xpath, value: 'xpath' },
+    { label: t.value.searchType.id, value: 'id' },
+    { label: t.value.searchType.className, value: 'className' },
+  ]
+})
+
+watch(
+  () => props.platform,
+  (platform) => {
+    if (platform === 'ios') {
+      if (searchType.value !== 'label' && searchType.value !== 'xpath' && searchType.value !== 'className') {
+        searchType.value = 'label'
+      }
+      return
+    }
+    if (searchType.value === 'label') {
+      searchType.value = 'text'
+    }
+  },
+  { immediate: true }
+)
 
 // Tree State
 const nodeKeyMap = ref<Map<string, UINode>>(new Map())
@@ -164,6 +192,9 @@ function renderTreeLabel({ option }: { option: TreeOption }) {
   }
   if (node.text) {
     elements.push(h('span', { class: 'tree-node-highlight' }, ` text=${node.text}`))
+  }
+  if (node.label) {
+    elements.push(h('span', { class: 'tree-node-highlight' }, ` label=${node.label}`))
   }
 
   return h('span', {}, elements)

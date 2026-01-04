@@ -14,6 +14,10 @@ export function useDrawingCanvas() {
 
   const shapes = ref<Shape[]>([])
 
+  function isNormalizedBounds(bounds: [number, number, number, number]): boolean {
+    return bounds.every(v => Number.isFinite(v) && v >= 0 && v <= 1)
+  }
+
   /**
    * 清空画布并重绘所有形状
    */
@@ -34,11 +38,24 @@ export function useDrawingCanvas() {
    * 添加矩形高亮（UI 元素边界）
    */
   function addRect(bounds: [number, number, number, number], style: 'hover' | 'select') {
-    const [left, top, right, bottom] = bounds
-    const width = right - left
-    const height = bottom - top
+    if (!canvasRef.value) return
 
-    shapes.value.push(new RectShape(left, top, width, height, style))
+    const [left, top, right, bottom] = bounds
+    const canvasWidth = canvasRef.value.width
+    const canvasHeight = canvasRef.value.height
+
+    const normalized = isNormalizedBounds(bounds)
+    const x1 = normalized ? left * canvasWidth : left
+    const y1 = normalized ? top * canvasHeight : top
+    const x2 = normalized ? right * canvasWidth : right
+    const y2 = normalized ? bottom * canvasHeight : bottom
+
+    const x = Math.min(x1, x2)
+    const y = Math.min(y1, y2)
+    const width = Math.abs(x2 - x1)
+    const height = Math.abs(y2 - y1)
+
+    shapes.value.push(new RectShape(x, y, width, height, style))
     redraw()
   }
 

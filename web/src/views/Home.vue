@@ -1,21 +1,29 @@
 <template>
   <div class="home-container">
+    <!-- Language Switcher -->
+    <div class="language-switcher">
+      <n-radio-group v-model:value="i18nStore.locale" size="small">
+        <n-radio-button value="zh">中文</n-radio-button>
+        <n-radio-button value="en">English</n-radio-button>
+      </n-radio-group>
+    </div>
+
     <div class="welcome-card">
       <div class="logo-section">
         <n-icon size="80" color="var(--md-primary)">
           <PhoneLandscapeOutline />
         </n-icon>
-        <h1 class="app-title">ByteAutoUI</h1>
-        <p class="app-subtitle">移动端 UI 自动化检查工具</p>
+        <h1 class="app-title">{{ t.home.title }}</h1>
+        <p class="app-subtitle">{{ t.home.subtitle }}</p>
       </div>
 
       <div class="action-section">
-        <p class="instruction-text">请先连接设备，然后点击下方按钮选择设备</p>
+        <p class="instruction-text">{{ t.home.instruction }}</p>
         <n-button type="primary" size="large" @click="showDeviceSelector = true">
           <template #icon>
             <n-icon><AddCircleOutline /></n-icon>
           </template>
-          选择设备
+          {{ t.home.selectDevice }}
         </n-button>
       </div>
 
@@ -25,19 +33,19 @@
             <n-icon size="20" color="var(--md-text-secondary)">
               <LogoAndroid />
             </n-icon>
-            <span>支持 Android、iOS、HarmonyOS 设备</span>
+            <span>{{ t.home.features.multiPlatform }}</span>
           </div>
           <div class="info-item">
             <n-icon size="20" color="var(--md-text-secondary)">
               <RadioButtonOnOutline />
             </n-icon>
-            <span>录制和回放操作序列</span>
+            <span>{{ t.home.features.recording }}</span>
           </div>
           <div class="info-item">
             <n-icon size="20" color="var(--md-text-secondary)">
               <LayersOutline />
             </n-icon>
-            <span>实时查看 UI 层级结构</span>
+            <span>{{ t.home.features.hierarchy }}</span>
           </div>
         </n-space>
       </div>
@@ -49,9 +57,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NIcon, NSpace } from 'naive-ui'
+import { NButton, NIcon, NSpace, NRadioGroup, NRadioButton } from 'naive-ui'
 import {
   PhoneLandscapeOutline,
   AddCircleOutline,
@@ -60,10 +68,14 @@ import {
   LayersOutline,
 } from '@vicons/ionicons5'
 import DeviceSelector from '@/components/DeviceSelector.vue'
+import { useI18nStore } from '@/stores/i18n'
 import type { Platform } from '@/api/types'
 
 const router = useRouter()
 const showDeviceSelector = ref(false)
+const i18nStore = useI18nStore()
+
+const t = computed(() => i18nStore.t)
 
 function handleDeviceSelect(platform: Platform, serial: string) {
   router.push(`/${platform}/${serial}`)
@@ -78,6 +90,14 @@ function handleDeviceSelect(platform: Platform, serial: string) {
   min-height: 100vh;
   background: var(--md-surface);
   padding: var(--md-space-lg);
+  position: relative;
+}
+
+.language-switcher {
+  position: absolute;
+  top: var(--md-space-lg);
+  right: var(--md-space-lg);
+  z-index: 10;
 }
 
 .welcome-card {

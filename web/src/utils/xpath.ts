@@ -21,7 +21,7 @@ export function generateXPath(node: UINode, allNodes: UINode[]): string {
 
 /**
  * 生成单个节点的XPath段
- * 优先级：resource-id > text > class + index
+ * 优先级：resource-id > text/label > class + index
  */
 function generateSegment(node: UINode, allNodes: UINode[]): string {
   // 优先使用resource-id（唯一标识）
@@ -32,6 +32,11 @@ function generateSegment(node: UINode, allNodes: UINode[]): string {
   // 其次使用text（如果文本唯一）
   if (node.text && node.text.trim()) {
     return `*[@text="${node.text}"]`
+  }
+
+  // iOS：使用label（如果可用）
+  if (node.label && node.label.trim()) {
+    return `*[@label="${node.label}"]`
   }
 
   // 最后使用class + index

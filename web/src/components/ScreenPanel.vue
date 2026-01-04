@@ -274,11 +274,18 @@ function canvasToDeviceCoords(point: Point): { x: number; y: number } | null {
 function findNodeAtPosition(x: number, y: number): UINode | null {
   if (!store.hierarchy?.nodes) return null
 
+  const { width, height } = screenSize.value
+  if (!width || !height) return null
+
+  // 转换为归一化坐标（0-1）以匹配bounds格式
+  const normalizedX = x / width
+  const normalizedY = y / height
+
   const allNodes: UINode[] = []
   function flatten(nodes: UINode[]) {
     nodes.forEach(node => {
-      allNodes.push(node)
       if (node.children) flatten(node.children)
+      allNodes.push(node)
     })
   }
   flatten(store.hierarchy.nodes)
@@ -288,8 +295,15 @@ function findNodeAtPosition(x: number, y: number): UINode | null {
 
   for (const node of allNodes) {
     if (!node.bounds) continue
-    const [left, top, right, bottom] = node.bounds
-    if (x >= left && x <= right && y >= top && y <= bottom) {
+    const [rawLeft, rawTop, rawRight, rawBottom] = node.bounds
+    const normalizedBounds = rawRight <= 1 && rawBottom <= 1
+
+    const left = normalizedBounds ? rawLeft : rawLeft / width
+    const top = normalizedBounds ? rawTop : rawTop / height
+    const right = normalizedBounds ? rawRight : rawRight / width
+    const bottom = normalizedBounds ? rawBottom : rawBottom / height
+
+    if (normalizedX >= left && normalizedX <= right && normalizedY >= top && normalizedY <= bottom) {
       const area = (right - left) * (bottom - top)
       if (area < minArea) {
         minArea = area

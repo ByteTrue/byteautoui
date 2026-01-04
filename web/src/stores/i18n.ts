@@ -22,6 +22,43 @@ const messages = {
       no: '否',
     },
 
+    // 首页
+    home: {
+      title: 'ByteAutoUI',
+      subtitle: '移动端 UI 自动化检查工具',
+      instruction: '请先连接设备，然后点击下方按钮选择设备',
+      selectDevice: '选择设备',
+      features: {
+        multiPlatform: '支持 Android、iOS、HarmonyOS 设备',
+        recording: '录制和回放操作序列',
+        hierarchy: '实时查看 UI 层级结构',
+      },
+    },
+
+    // iOS WDA 配置对话框
+    iosConfig: {
+      title: 'iOS WDA 配置',
+      wdaStartFailed: 'WDA 启动失败',
+      firstTimeSetup: '首次使用需要配置',
+      setupDescription: '使用 ByteAutoUI 之前，必须先在 iOS 设备上安装 WebDriverAgent (WDA)。',
+      setupGuide: '安装指南：',
+      deviceUDID: '设备 UDID',
+      wdaBundleId: 'WDA Bundle ID',
+      wdaPort: 'WDA 端口',
+      commonBundleIds: '常用 Bundle ID：',
+      defaultBundleId: '（默认）',
+      appiumBundleId: '（Appium）',
+      helpTitle: '📖 如何查找你的 Bundle ID：',
+      helpSteps: {
+        step1: '在 Xcode 中打开 WebDriverAgent 项目',
+        step2: '选择 "WebDriverAgentRunner" 目标',
+        step3: '在 General 选项卡中查看 "Bundle Identifier"',
+      },
+      helpNote: '注意：配置将被保存并记住此设备。',
+      cancel: '取消',
+      saveConfiguration: '保存配置',
+    },
+
     // 设备页面
     device: {
       selectDevice: '选择设备',
@@ -61,6 +98,7 @@ const messages = {
       searchPlaceholder: '输入搜索内容...',
       searchType: {
         text: '文本 (text)',
+        label: '标签 (label)',
         xpath: 'XPath',
         id: 'Resource ID',
         className: 'Class Name',
@@ -226,6 +264,43 @@ const messages = {
       no: 'No',
     },
 
+    // Home page
+    home: {
+      title: 'ByteAutoUI',
+      subtitle: 'Mobile UI Automation Inspector',
+      instruction: 'Connect your device and click the button below to select a device',
+      selectDevice: 'Select Device',
+      features: {
+        multiPlatform: 'Supports Android, iOS, and HarmonyOS devices',
+        recording: 'Record and playback operation sequences',
+        hierarchy: 'Real-time UI hierarchy inspection',
+      },
+    },
+
+    // iOS WDA Config Dialog
+    iosConfig: {
+      title: 'iOS WDA Configuration',
+      wdaStartFailed: 'WDA Start Failed',
+      firstTimeSetup: 'First time setup required',
+      setupDescription: 'WebDriverAgent (WDA) must be installed on your iOS device before using ByteAutoUI.',
+      setupGuide: 'Setup guide:',
+      deviceUDID: 'Device UDID',
+      wdaBundleId: 'WDA Bundle ID',
+      wdaPort: 'WDA Port',
+      commonBundleIds: 'Common Bundle IDs:',
+      defaultBundleId: '(Default)',
+      appiumBundleId: '(Appium)',
+      helpTitle: '📖 How to find your Bundle ID:',
+      helpSteps: {
+        step1: 'Open WebDriverAgent project in Xcode',
+        step2: 'Select "WebDriverAgentRunner" target',
+        step3: 'Check "Bundle Identifier" in General tab',
+      },
+      helpNote: 'Note: Configuration will be saved and remembered for this device.',
+      cancel: 'Cancel',
+      saveConfiguration: 'Save Configuration',
+    },
+
     // Device page
     device: {
       selectDevice: 'Select Device',
@@ -265,6 +340,7 @@ const messages = {
       searchPlaceholder: 'Enter search text...',
       searchType: {
         text: 'Text',
+        label: 'Label',
         xpath: 'XPath',
         id: 'Resource ID',
         className: 'Class Name',

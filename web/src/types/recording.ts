@@ -32,6 +32,7 @@ export interface XPathInfo {
  */
 export interface ElementInfo {
   text?: string
+  label?: string
   resource_id?: string
   class_name?: string
   content_desc?: string
