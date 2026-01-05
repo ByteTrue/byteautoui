@@ -18,6 +18,7 @@ from byteautoui.driver.base_driver import BaseDriver
 from byteautoui.exceptions import IOSDriverException
 from byteautoui.model import Node, WindowSize
 from byteautoui.remote.goios_wda_server import GoIOSWDAServer
+from byteautoui.remote.ios_mjpeg_stream import IOSMJPEGStream
 from byteautoui.utils.usbmux import select_device
 
 
@@ -44,6 +45,9 @@ class IOSDriver(BaseDriver):
             self._wda_server.start()
 
         self.wda = wdapy.AppiumUSBClient(self.device.serial)
+
+        # MJPEG流管理（用于指针模式）
+        self._mjpeg_stream: Optional[IOSMJPEGStream] = None
     
     def _request(self, method: str, path: str, payload: Optional[dict] = None) -> bytes:
         conn = self.device.make_http_connection(port=8100)
@@ -91,7 +95,11 @@ class IOSDriver(BaseDriver):
     
     def tap(self, x: int, y: int):
         self.wda.tap(x, y)
-    
+
+    def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: float = 0.5):
+        """滑动操作（用于指针模式的拖拽）"""
+        self.wda.swipe(x1, y1, x2, y2, duration)
+
     def app_current(self) -> CurrentAppResponse:
         info = self.wda.app_current()
         return CurrentAppResponse(package=info.bundle_id, pid=info.pid)
@@ -108,8 +116,40 @@ class IOSDriver(BaseDriver):
     def volume_down(self):
         self.wda.volume_down()
 
+    def start_mjpeg_stream(self) -> bool:
+        """启动MJPEG流（用于指针模式）
+
+        注意：go-ios screenshot --stream 默认 3333，可自动选择可用端口
+        """
+        if not self._mjpeg_stream:
+            self._mjpeg_stream = IOSMJPEGStream(
+                device_udid=self.device.serial,
+            )
+        return self._mjpeg_stream.start_recording()
+
+    def stop_mjpeg_stream(self) -> bool:
+        """停止MJPEG流"""
+        if self._mjpeg_stream:
+            return self._mjpeg_stream.stop_recording()
+        return True
+
+    def get_mjpeg_url(self) -> Optional[str]:
+        """获取MJPEG流URL"""
+        if self._mjpeg_stream:
+            return self._mjpeg_stream.get_mjpeg_url()
+        return None
+
+    def is_mjpeg_stream_available(self) -> bool:
+        """检查MJPEG流是否可用"""
+        if self._mjpeg_stream:
+            return self._mjpeg_stream.is_stream_available()
+        return False
+
     def close(self):
         """清理WDA资源（类似ScrcpyServer.close）"""
+        if self._mjpeg_stream:
+            self._mjpeg_stream.close()
+            self._mjpeg_stream = None
         if self._wda_server:
             self._wda_server.close()
             self._wda_server = None
