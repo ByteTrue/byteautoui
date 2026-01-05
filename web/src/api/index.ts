@@ -83,4 +83,82 @@ export async function setIOSConfig(serial: string, config: Partial<import('./typ
   })
 }
 
+// ============ 断言 API ============
+
+export interface AssertElementRequest {
+  selector: {
+    xpath: string
+    attributes?: {
+      text?: string
+      resourceId?: string
+      className?: string
+    }
+  }
+  expect: 'exists' | 'not_exists'
+  wait?: {
+    enabled: boolean
+    timeout: number
+    interval: number
+  }
+}
+
+export interface AssertImageRequest {
+  template: {
+    data: string
+    threshold: number
+    name?: string
+  }
+  expect: 'exists' | 'not_exists'
+  wait?: {
+    enabled: boolean
+    timeout: number
+    interval: number
+  }
+}
+
+export interface AssertCombinedRequest {
+  operator: 'and' | 'or'
+  conditions: Array<{
+    type: 'element' | 'image'
+    [key: string]: unknown
+  }>
+  wait?: {
+    enabled: boolean
+    timeout: number
+    interval: number
+  }
+  platform?: string  // 平台类型: 'android' | 'ios' | 'harmony'
+}
+
+export interface AssertResponse {
+  success: boolean
+  message: string
+  screenshot?: string  // Base64 失败截图
+  details?: unknown
+}
+
+export async function assertElement(
+  platform: Platform,
+  serial: string,
+  request: AssertElementRequest
+): Promise<AssertResponse> {
+  return sendCommand(platform, serial, 'assertElement', { ...request }) as Promise<AssertResponse>
+}
+
+export async function assertImage(
+  platform: Platform,
+  serial: string,
+  request: AssertImageRequest
+): Promise<AssertResponse> {
+  return sendCommand(platform, serial, 'assertImage', { ...request }) as Promise<AssertResponse>
+}
+
+export async function assertCombined(
+  platform: Platform,
+  serial: string,
+  request: AssertCombinedRequest
+): Promise<AssertResponse> {
+  return sendCommand(platform, serial, 'assertCombined', { ...request }) as Promise<AssertResponse>
+}
+
 export * from './types'
