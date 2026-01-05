@@ -69,7 +69,82 @@ export interface CommandParams {
   args?: Record<string, unknown>
 }
 
-export type ActionParams = TapParams | SwipeParams | InputParams | SleepParams | CommandParams
+// ============ 断言相关类型定义 ============
+
+/**
+ * 断言条件类型
+ */
+export type AssertConditionType = 'element' | 'image'
+
+/**
+ * 断言期望结果
+ */
+export type AssertExpect = 'exists' | 'not_exists'
+
+/**
+ * 元素选择器
+ */
+export interface ElementSelector {
+  xpath: string
+  attributes?: {
+    text?: string
+    resourceId?: string
+    className?: string
+  }
+}
+
+/**
+ * 元素断言条件
+ */
+export interface ElementCondition {
+  type: 'element'
+  selector: ElementSelector
+  expect: AssertExpect
+}
+
+/**
+ * 图片模板
+ */
+export interface ImageTemplate {
+  data: string        // Base64 编码的图片数据 (data:image/png;base64,...)
+  threshold: number   // 相似度阈值 [0.0-1.0]，默认 0.9
+  name?: string       // 可选的模板名称，用于显示
+}
+
+/**
+ * 图片断言条件
+ */
+export interface ImageCondition {
+  type: 'image'
+  template: ImageTemplate
+  expect: AssertExpect
+}
+
+/**
+ * 断言条件联合类型
+ */
+export type AssertCondition = ElementCondition | ImageCondition
+
+/**
+ * 等待配置
+ */
+export interface WaitConfig {
+  enabled: boolean
+  timeout: number      // 毫秒
+  interval: number     // 重试间隔，毫秒
+}
+
+/**
+ * 断言动作参数
+ */
+export interface AssertParams {
+  description?: string  // 用户自定义描述，用于步骤列表显示
+  operator: 'and' | 'or'
+  conditions: AssertCondition[]
+  wait?: WaitConfig
+}
+
+export type ActionParams = TapParams | SwipeParams | InputParams | SleepParams | CommandParams | AssertParams
 
 /**
  * 录制的单个操作 - 使用判别联合类型确保类型安全
@@ -81,7 +156,8 @@ export type ActionParams = TapParams | SwipeParams | InputParams | SleepParams |
 interface BaseAction {
   id: string
   timestamp: number
-  relativeTime: number
+  relativeTime: number       // 相对于录制开始的时间（内部使用）
+  waitAfter: number          // 完成后等待时间（毫秒），用于UI显示和编辑
   screenshot?: string
 }
 
@@ -122,6 +198,12 @@ export interface CommandAction extends BaseAction {
   params: CommandParams
 }
 
+// 断言操作 - 验证界面状态
+export interface AssertAction extends BaseAction {
+  type: 'assert'
+  params: AssertParams
+}
+
 // 判别联合类型 - TypeScript会根据type字段自动推断类型
 export type RecordedAction =
   | TapAction
@@ -129,6 +211,7 @@ export type RecordedAction =
   | InputAction
   | SleepAction
   | CommandAction
+  | AssertAction
 
 /**
  * 录制文件(完整会话)
@@ -179,4 +262,18 @@ export interface PlaybackProgress {
   elapsedTime: number // 已执行时长(毫秒)
   state: PlaybackState
   error?: string // 错误信息
+}
+
+/**
+ * 步骤执行结果状态
+ */
+export type StepResultStatus = 'pending' | 'running' | 'success' | 'failed' | 'skipped'
+
+/**
+ * 步骤执行结果
+ */
+export interface StepResult {
+  status: StepResultStatus
+  error?: string      // 失败原因
+  duration?: number   // 执行耗时(毫秒)
 }
