@@ -134,42 +134,100 @@ def make_router(provider: BaseProvider) -> APIRouter:
         }
         return StreamingResponse(driver.open_app_file(packageName), headers=headers)
 
-    # iOS特定路由 - 配置管理
-    @router.get('/{serial}/ios-config')
-    def get_ios_config(serial: str) -> IOSConfigResponse:
-        """获取iOS设备的WDA配置"""
-        try:
-            from byteautoui.utils.ios_config import get_ios_config_manager
-            config_manager = get_ios_config_manager()
-            config = config_manager.get_device_config(serial)
-            return IOSConfigResponse(
-                wda_bundle_id=config['wda_bundle_id'],
-                wda_port=config['wda_port']
-            )
-        except Exception as e:
-            logger.exception("get_ios_config failed")
-            return Response(content=str(e), media_type="text/plain", status_code=500)
+    # iOS 特定路由
+    try:
+        from byteautoui.provider import IOSProvider  # 避免所有平台都暴露 iOS-only feature
+    except Exception:
+        IOSProvider = None  # type: ignore
 
-    @router.post('/{serial}/ios-config')
-    def set_ios_config(serial: str, config: IOSConfigRequest) -> IOSConfigResponse:
-        """设置iOS设备的WDA配置"""
-        try:
-            from byteautoui.utils.ios_config import get_ios_config_manager
-            config_manager = get_ios_config_manager()
+    if IOSProvider and isinstance(provider, IOSProvider):
+        @router.get('/{serial}/ios-config')
+        def get_ios_config(serial: str) -> IOSConfigResponse:
+            """获取iOS设备的WDA配置"""
+            try:
+                from byteautoui.utils.ios_config import get_ios_config_manager
+                config_manager = get_ios_config_manager()
+                config = config_manager.get_device_config(serial)
+                return IOSConfigResponse(
+                    wda_bundle_id=config['wda_bundle_id'],
+                    wda_port=config['wda_port']
+                )
+            except Exception as e:
+                logger.exception("get_ios_config failed")
+                return Response(content=str(e), media_type="text/plain", status_code=500)
 
-            if config.wda_bundle_id:
-                config_manager.set_wda_bundle_id(serial, config.wda_bundle_id)
-            if config.wda_port:
-                config_manager.set_wda_port(serial, config.wda_port)
+        @router.post('/{serial}/ios-config')
+        def set_ios_config(serial: str, config: IOSConfigRequest) -> IOSConfigResponse:
+            """设置iOS设备的WDA配置"""
+            try:
+                from byteautoui.utils.ios_config import get_ios_config_manager
+                config_manager = get_ios_config_manager()
 
-            # 返回更新后的配置
-            updated_config = config_manager.get_device_config(serial)
-            return IOSConfigResponse(
-                wda_bundle_id=updated_config['wda_bundle_id'],
-                wda_port=updated_config['wda_port']
-            )
-        except Exception as e:
-            logger.exception("set_ios_config failed")
-            return Response(content=str(e), media_type="text/plain", status_code=500)
+                if config.wda_bundle_id:
+                    config_manager.set_wda_bundle_id(serial, config.wda_bundle_id)
+                if config.wda_port:
+                    config_manager.set_wda_port(serial, config.wda_port)
+
+                # 返回更新后的配置
+                updated_config = config_manager.get_device_config(serial)
+                return IOSConfigResponse(
+                    wda_bundle_id=updated_config['wda_bundle_id'],
+                    wda_port=updated_config['wda_port']
+                )
+            except Exception as e:
+                logger.exception("set_ios_config failed")
+                return Response(content=str(e), media_type="text/plain", status_code=500)
+
+        @router.get('/{serial}/mjpeg')
+        def get_mjpeg_stream(serial: str):
+            """获取 iOS MJPEG 流（代理 go-ios screenshot --stream）"""
+            try:
+                import httpx
+                from starlette.background import BackgroundTask
+                from starlette.responses import StreamingResponse
+
+                driver = provider.get_device_driver(serial)
+                if not hasattr(driver, "start_mjpeg_stream") or not hasattr(driver, "get_mjpeg_url"):
+                    return Response(content="mjpeg not supported", media_type="text/plain", status_code=501)
+
+                if hasattr(driver, "is_mjpeg_stream_available") and not driver.is_mjpeg_stream_available():
+                    started = driver.start_mjpeg_stream()
+                    if not started:
+                        return Response(content="failed to start mjpeg stream", media_type="text/plain", status_code=500)
+
+                mjpeg_url = driver.get_mjpeg_url()
+                if not mjpeg_url:
+                    return Response(content="mjpeg url not available", media_type="text/plain", status_code=500)
+
+                client = httpx.Client(timeout=None)
+                try:
+                    req = client.build_request("GET", mjpeg_url)
+                    upstream = client.send(req, stream=True, follow_redirects=True)
+                    upstream.raise_for_status()
+                except Exception:
+                    client.close()
+                    raise
+
+                content_type = upstream.headers.get("Content-Type", "multipart/x-mixed-replace")
+
+                def _cleanup():
+                    try:
+                        upstream.close()
+                    finally:
+                        client.close()
+
+                return StreamingResponse(
+                    upstream.iter_bytes(chunk_size=8192),
+                    media_type=content_type,
+                    headers={
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "Pragma": "no-cache",
+                        "Expires": "0",
+                    },
+                    background=BackgroundTask(_cleanup),
+                )
+            except Exception as e:
+                logger.exception("get_mjpeg_stream failed")
+                return Response(content=str(e), media_type="text/plain", status_code=500)
 
     return router
