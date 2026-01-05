@@ -47,6 +47,10 @@ class Command(str, enum.Enum):
     SWIPE_LEFT = "swipeLeft"
     SWIPE_RIGHT = "swipeRight"
 
+    # iOS MJPEG 流控制
+    START_MJPEG_STREAM = "start_mjpeg_stream"
+    STOP_MJPEG_STREAM = "stop_mjpeg_stream"
+
 
 class TapRequest(BaseModel):
     x: Union[int, float]

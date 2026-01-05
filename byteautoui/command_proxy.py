@@ -228,8 +228,8 @@ def _xml_element_to_node(element: etree._Element, parent_path: str = "") -> Node
         key = f"{parent_path}/{element.tag}[{index}]"
 
     # Parse bounds: "[x1,y1][x2,y2]" -> [x1, y1, x2, y2]
-    bounds_str = properties.get("bounds", "")
     bounds = None
+    bounds_str = properties.get("bounds", "")
     if bounds_str:
         try:
             # Extract numbers from "[x1,y1][x2,y2]" format
@@ -237,8 +237,20 @@ def _xml_element_to_node(element: etree._Element, parent_path: str = "") -> Node
             numbers = re.findall(r'\d+', bounds_str)
             if len(numbers) == 4:
                 bounds = [int(n) for n in numbers]
-        except:
+        except Exception:
             pass
+
+    # iOS: fall back to x/y/width/height if bounds is missing
+    if bounds is None:
+        try:
+            if {"x", "y", "width", "height"}.issubset(properties.keys()):
+                x = float(properties["x"])
+                y = float(properties["y"])
+                w = float(properties["width"])
+                h = float(properties["height"])
+                bounds = [x, y, x + w, y + h]
+        except Exception:
+            bounds = None
 
     # Create Node object
     node = Node(
@@ -298,12 +310,64 @@ def click_element(driver: BaseDriver, params: FindElementRequest):
         time.sleep(.5) # interval
     if not node:
         raise ElementNotFoundError(f"element not found by {params.by}={params.value}")
-    center_x = (node.bounds[0] + node.bounds[2]) / 2
-    center_y = (node.bounds[1] + node.bounds[3]) / 2
-    tap(driver, TapRequest(x=center_x, y=center_y, isPercent=True))
+
+    # 计算中心坐标：优先使用 bounds，其次使用属性中的 x/y/width/height
+    x1 = y1 = x2 = y2 = None
+    if node.bounds and len(node.bounds) == 4:
+        x1, y1, x2, y2 = node.bounds
+    else:
+        props = node.properties or {}
+        if {"x", "y", "width", "height"}.issubset(props.keys()):
+            x1 = float(props["x"])
+            y1 = float(props["y"])
+            x2 = x1 + float(props["width"])
+            y2 = y1 + float(props["height"])
+
+    if None in (x1, y1, x2, y2):
+        raise ElementNotFoundError("element found but bounds unavailable for tap")
+
+    is_percent = x2 <= 1 and y2 <= 1
+    if is_percent:
+        wsize = driver.window_size()
+        # WindowSize is a NamedTuple; support both attribute and index access
+        width = getattr(wsize, "width", wsize[0])
+        height = getattr(wsize, "height", wsize[1])
+        x1 *= width
+        y1 *= height
+        x2 *= width
+        y2 *= height
+
+    center_x = (x1 + x2) / 2
+    center_y = (y1 + y2) / 2
+    driver.tap(int(center_x), int(center_y))
 
 
 @register(Command.APP_LIST)
 def app_list(driver: BaseDriver) -> List[AppInfo]:
     # added in v0.5.0
     return driver.app_list()
+
+
+@register(Command.START_MJPEG_STREAM)
+def start_mjpeg_stream(driver: BaseDriver):
+    """启动 iOS MJPEG 流（用于指针模式）"""
+    if hasattr(driver, 'start_mjpeg_stream'):
+        ok = driver.start_mjpeg_stream()
+        if not ok:
+            raise RuntimeError(
+                "failed to start iOS MJPEG stream (go-ios screenshot --stream). "
+                "check go-ios install, device unlocked/trusted, and tunnel status."
+            )
+        return {"success": True}
+    raise NotImplementedError("start_mjpeg_stream not supported by this driver")
+
+
+@register(Command.STOP_MJPEG_STREAM)
+def stop_mjpeg_stream(driver: BaseDriver):
+    """停止 iOS MJPEG 流"""
+    if hasattr(driver, 'stop_mjpeg_stream'):
+        ok = driver.stop_mjpeg_stream()
+        if not ok:
+            raise RuntimeError("failed to stop iOS MJPEG stream")
+        return {"success": True}
+    raise NotImplementedError("stop_mjpeg_stream not supported by this driver")
