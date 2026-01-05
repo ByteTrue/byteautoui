@@ -24,7 +24,7 @@
         <img
           v-if="!scrcpyMode"
           ref="imageRef"
-          :src="screenshotUrl"
+          :src="imageUrl"
           class="screen-image"
           @load="handleImageLoad"
           @error="handleImageError"
@@ -57,6 +57,7 @@ import { NRadioGroup, NRadioButton, NIcon, useMessage } from 'naive-ui'
 import { EyeOutline, FingerPrintOutline } from '@vicons/ionicons5'
 import { useDrawingCanvas, type ScreenMode } from '@/composables/useDrawingCanvas'
 import { useScrcpy } from '@/composables/useScrcpy'
+import { useMjpeg } from '@/composables/useMjpeg'
 import { useDeviceStore } from '@/stores/device'
 import { useI18nStore } from '@/stores/i18n'
 import type { Platform, UINode } from '@/api/types'
@@ -90,8 +91,9 @@ const mousePos = ref({ x: 0, y: 0 })
 const isDrawing = ref(false)
 const trackPoints = ref<Point[]>([])
 
-// 自动切换：指针模式启用视频流，其他模式使用静态截图
-const scrcpyMode = computed(() => screenMode.value === 'pointer')
+// 平台特定的视频模式判断
+const scrcpyMode = computed(() => platform.value === 'android' && screenMode.value === 'pointer')
+const mjpegMode = computed(() => platform.value === 'ios' && screenMode.value === 'pointer')
 
 // 元素引用
 const imageRef = ref<HTMLImageElement | null>(null)
@@ -114,8 +116,30 @@ const scrcpy = useScrcpy({
   videoRef,
 })
 
-// 截图 URL
-const screenshotUrl = computed(() => store.screenshotUrl)
+// iOS MJPEG 流（始终创建实例，启动/停止由 mjpegMode 控制）
+const mjpeg = useMjpeg({
+  platform,
+  serial,
+  enabled: mjpegMode,
+})
+
+// iOS MJPEG 启动失败提示
+watch(
+  () => mjpeg.error.value,
+  (err, prev) => {
+    if (err && err !== prev) {
+      message.error(err)
+    }
+  }
+)
+
+// 动态图片 URL：iOS 指针模式使用 MJPEG，否则使用截图
+const imageUrl = computed(() => {
+  if (mjpegMode.value && mjpeg.streamUrl.value) {
+    return mjpeg.streamUrl.value
+  }
+  return store.screenshotUrl
+})
 
 // 屏幕尺寸（优先使用外部传入的 props）
 const screenSize = computed(() => ({
