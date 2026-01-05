@@ -8,12 +8,15 @@
           :current-playback-index="player.currentIndex.value"
           :is-playback-active="player.isPlaying.value"
           :t="t"
+          :step-results="player.stepResults.value"
           @toggle-recording="toggleRecording"
           @toggle-pause="togglePause"
           @clear-recording="clearRecording"
           @save-recording="showSaveRecordingDialog"
           @edit-action="editAction"
           @delete-action="deleteAction"
+          @assert-menu-select="$emit('assert-menu-select', $event)"
+          @reorder-actions="handleReorderActions"
         />
       </n-tab-pane>
 
@@ -73,8 +76,8 @@ import { useRecorder } from '@/composables/useRecorder'
 import { usePlayer } from '@/composables/usePlayer'
 import { useDeviceStore } from '@/stores/device'
 import { useI18nStore } from '@/stores/i18n'
-import type { Platform } from '@/api/types'
-import type { RecordedAction } from '@/types/recording'
+import type { Platform, UINode } from '@/api/types'
+import type { RecordedAction, AssertParams } from '@/types/recording'
 import {
   saveRecording as saveRecordingAPI,
   listRecordings,
@@ -86,6 +89,11 @@ import {
 const props = defineProps<{
   platform: Platform
   serial: string
+}>()
+
+const emit = defineEmits<{
+  'assert-menu-select': [key: string]
+  'edit-assert': [action: RecordedAction]
 }>()
 
 const message = useMessage()
@@ -207,7 +215,16 @@ function deleteAction(id: string) {
   recorder.deleteAction(id)
 }
 
+function handleReorderActions(actions: RecordedAction[]) {
+  recorder.reorderActions(actions)
+}
+
 function editAction(action: RecordedAction) {
+  // 断言类型使用专门的AssertConfigDialog编辑
+  if (action.type === 'assert') {
+    emit('edit-assert', action)
+    return
+  }
   editingAction.value = action
   showEditDialog.value = true
 }
@@ -305,7 +322,7 @@ async function startPlayback() {
 }
 
 // 公开方法（供父组件调用）
-async function recordTap(x: number, y: number, selectedNode: any) {
+async function recordTap(x: number, y: number, selectedNode: UINode | null) {
   await recorder.recordTap(x, y, selectedNode)
 }
 
@@ -315,13 +332,20 @@ async function recordSwipe(
   endX: number,
   endY: number,
   duration: number,
-  selectedNode: any
+  selectedNode: UINode | null
 ) {
   await recorder.recordSwipe(startX, startY, endX, endY, duration, selectedNode)
 }
 
 function getIsRecording() {
   return recorder.isRecording.value
+}
+
+/**
+ * 录制断言操作
+ */
+async function recordAssert(params: AssertParams) {
+  await recorder.recordAssert(params)
 }
 
 // 组件挂载时加载录制列表
@@ -333,7 +357,9 @@ onMounted(() => {
 defineExpose({
   recordTap,
   recordSwipe,
+  recordAssert,
   getIsRecording,
+  recorder, // 导出recorder以支持断言编辑
 })
 </script>
 

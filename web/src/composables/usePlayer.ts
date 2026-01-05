@@ -1,11 +1,14 @@
 import { ref, computed, type ComputedRef } from 'vue'
 import type { Platform } from '@/api/types'
-import { tap, sendCommand, getHierarchy } from '@/api'
+import { tap, sendCommand, getHierarchy, assertCombined, type AssertCombinedRequest } from '@/api'
 import type {
   RecordingFile,
   RecordedAction,
   PlaybackState,
   PlaybackProgress,
+  AssertParams,
+  StepResult,
+  StepResultStatus,
 } from '@/types/recording'
 
 /**
@@ -24,6 +27,9 @@ export function usePlayer(
   const error = ref<string | null>(null)
   const speed = ref(1.0) // 回放速度倍率
 
+  // 步骤执行结果追踪
+  const stepResults = ref<Map<string, StepResult>>(new Map())
+
   // 计算属性
   const progress = computed<PlaybackProgress>(() => ({
     currentIndex: currentIndex.value,
@@ -38,6 +44,27 @@ export function usePlayer(
   const canPlay = computed(() => recording.value !== null && recording.value.actions.length > 0)
 
   /**
+   * 获取步骤执行结果
+   */
+  function getStepResult(actionId: string): StepResult | undefined {
+    return stepResults.value.get(actionId)
+  }
+
+  /**
+   * 设置步骤执行结果
+   */
+  function setStepResult(actionId: string, result: StepResult) {
+    stepResults.value.set(actionId, result)
+  }
+
+  /**
+   * 重置所有步骤结果
+   */
+  function resetStepResults() {
+    stepResults.value.clear()
+  }
+
+  /**
    * 加载录制文件
    */
   function load(file: RecordingFile) {
@@ -45,6 +72,7 @@ export function usePlayer(
     currentIndex.value = -1
     state.value = 'idle'
     error.value = null
+    resetStepResults() // 重置结果
   }
 
   /**
@@ -55,6 +83,7 @@ export function usePlayer(
     currentIndex.value = -1
     state.value = 'idle'
     error.value = null
+    resetStepResults() // 重置结果
   }
 
   /**
@@ -203,6 +232,50 @@ export function usePlayer(
         break
       }
 
+      case 'assert': {
+        const params = action.params as AssertParams
+
+        // 构造组合断言请求
+        const request: AssertCombinedRequest = {
+          operator: params.operator,
+          conditions: params.conditions.map((c) => {
+            if (c.type === 'element') {
+              return {
+                type: 'element',
+                selector: c.selector,
+                expect: c.expect,
+              }
+            } else {
+              return {
+                type: 'image',
+                template: c.template,
+                expect: c.expect,
+              }
+            }
+          }),
+          wait: params.wait,
+          platform: platform,  // 传递平台参数用于属性映射
+        }
+
+        // 调用断言 API
+        const result = await assertCombined(platform, serial, request)
+
+        // 如果断言失败，抛出错误停止回放
+        if (!result.success) {
+          const errorMsg = `断言失败: ${result.message}`
+          console.error(errorMsg, result.details)
+
+          // 可选: 显示失败截图
+          if (result.screenshot) {
+            console.log('失败截图:', `data:image/jpeg;base64,${result.screenshot}`)
+          }
+
+          throw new Error(errorMsg)
+        }
+
+        break
+      }
+
       default:
         console.warn('未知操作类型')
     }
@@ -225,6 +298,7 @@ export function usePlayer(
       currentIndex.value = 0
       state.value = 'playing'
       error.value = null
+      resetStepResults() // 重新开始时重置所有结果
     }
 
     // 回放循环
@@ -235,21 +309,27 @@ export function usePlayer(
       }
 
       const action = recording.value.actions[currentIndex.value]!
+      const startTime = Date.now()
+
+      // 标记当前步骤为运行中
+      setStepResult(action.id, { status: 'running' })
 
       try {
         // 执行操作
         await executeAction(action)
+
+        // 标记步骤成功
+        const duration = Date.now() - startTime
+        setStepResult(action.id, { status: 'success', duration })
 
         // 再次检查状态（executeAction可能很耗时）
         if (state.value !== 'playing') {
           break
         }
 
-        // 等待到下一个操作的时间间隔
-        if (currentIndex.value < recording.value.actions.length - 1) {
-          const nextAction = recording.value.actions[currentIndex.value + 1]!
-          const delay = nextAction.relativeTime - action.relativeTime
-          await sleep(delay)
+        // 使用当前操作的 waitAfter 作为下一步前的等待时间
+        if (action.waitAfter > 0) {
+          await sleep(action.waitAfter)
 
           // 再次检查状态（sleep后可能被暂停）
           if (state.value !== 'playing') {
@@ -259,8 +339,13 @@ export function usePlayer(
 
         currentIndex.value++
       } catch (err) {
+        // 标记步骤失败
+        const duration = Date.now() - startTime
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        setStepResult(action.id, { status: 'failed', error: errorMsg, duration })
+
         // 保守策略:出错即停
-        error.value = err instanceof Error ? err.message : String(err)
+        error.value = errorMsg
         state.value = 'error'
         console.error(`回放失败在步骤 ${currentIndex.value}:`, err)
         break
@@ -352,5 +437,9 @@ export function usePlayer(
     stepNext,
     seekTo,
     setSpeed,
+
+    // 步骤结果追踪
+    stepResults,
+    getStepResult,
   }
 }

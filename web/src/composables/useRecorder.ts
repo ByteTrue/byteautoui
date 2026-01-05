@@ -13,6 +13,7 @@ import type {
   InputParams,
   SleepParams,
   CommandParams,
+  AssertParams,
 } from '@/types/recording'
 import { downloadJSON } from '@/utils/download'
 
@@ -165,10 +166,21 @@ export function useRecorder(
     if (!isRecording.value || isPaused.value) return
 
     const now = Date.now()
+    const currentRelativeTime = now - startTime.value
+
+    // 更新前一个action的waitAfter（如果存在）
+    if (actions.value.length > 0) {
+      const lastAction = actions.value[actions.value.length - 1]!
+      const waitTime = currentRelativeTime - lastAction.relativeTime
+      // 直接修改（因为是ref数组中的对象）
+      ;(lastAction as any).waitAfter = waitTime
+    }
+
     const baseAction = {
       id: crypto.randomUUID(),
       timestamp: now,
-      relativeTime: now - startTime.value,
+      relativeTime: currentRelativeTime,
+      waitAfter: 0, // 默认为0，会在下一个action添加时更新
       screenshot: await captureScreenshot(),
     }
 
@@ -218,6 +230,13 @@ export function useRecorder(
           ...baseAction,
           type: type as 'command' | 'back' | 'home',
           params: params as CommandParams,
+        }
+        break
+      case 'assert':
+        action = {
+          ...baseAction,
+          type: 'assert',
+          params: params as any, // AssertParams
         }
         break
       default:
@@ -280,6 +299,40 @@ export function useRecorder(
   }
 
   /**
+   * 录制断言操作（支持编辑模式添加）
+   * 断言可以在录制中或有已录制内容时添加
+   */
+  async function recordAssert(params: AssertParams) {
+    // 如果在录制中，使用标准流程
+    if (isRecording.value && !isPaused.value) {
+      await addAction('assert', params)
+      return
+    }
+
+    // 编辑模式：直接添加到 actions 数组
+    const now = Date.now()
+    const lastAction = actions.value[actions.value.length - 1]
+    const newRelativeTime = lastAction
+      ? lastAction.relativeTime + (lastAction.waitAfter || 1000)
+      : 0
+
+    // 更新前一个action的waitAfter（默认1秒间隔）
+    if (lastAction && lastAction.waitAfter === 0) {
+      ;(lastAction as any).waitAfter = 1000
+    }
+
+    const action: RecordedAction = {
+      id: crypto.randomUUID(),
+      type: 'assert',
+      timestamp: now,
+      relativeTime: newRelativeTime,
+      waitAfter: 0, // 最后一个action默认为0
+      params,
+    }
+    actions.value.push(action)
+  }
+
+  /**
    * 删除操作
    */
   function deleteAction(id: string) {
@@ -320,6 +373,24 @@ export function useRecorder(
     // 类型安全的合并
     actions.value[index] = merged as RecordedAction
     return true
+  }
+
+  /**
+   * 重新排序操作 - 拖拽后基于waitAfter重新计算relativeTime
+   * @param reorderedActions 重新排序后的操作列表
+   */
+  function reorderActions(reorderedActions: RecordedAction[]) {
+    // 基于每个action的waitAfter重新计算relativeTime
+    let currentRelativeTime = 0
+
+    const recalculated = reorderedActions.map((action, index) => {
+      const newAction = { ...action, relativeTime: currentRelativeTime }
+      // 累加当前action的waitAfter作为下一个action的relativeTime
+      currentRelativeTime += action.waitAfter || 500 // 默认500ms间隔
+      return newAction
+    })
+
+    actions.value = recalculated
   }
 
   /**
@@ -485,10 +556,12 @@ export function useRecorder(
     recordInput,
     recordSleep,
     recordCommand,
+    recordAssert,
 
     // 编辑操作
     deleteAction,
     updateAction,
+    reorderActions,
 
     // 文件操作
     exportRecording,

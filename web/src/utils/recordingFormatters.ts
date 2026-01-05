@@ -1,4 +1,4 @@
-import type { RecordedAction, ElementInfo } from '@/types/recording'
+import type { RecordedAction, ElementInfo, AssertParams } from '@/types/recording'
 
 /**
  * 格式化持续时间（毫秒 -> MM:SS）
@@ -17,6 +17,16 @@ export function formatRelativeTime(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   const seconds = (ms / 1000).toFixed(1)
   return `${seconds}s`
+}
+
+/**
+ * 格式化完成后等待时间
+ */
+export function formatWaitAfter(ms: number | undefined): string {
+  if (ms === undefined || ms === null || ms === 0) return '-'
+  if (ms < 1000) return `+${ms}ms`
+  const seconds = (ms / 1000).toFixed(1)
+  return `+${seconds}s`
 }
 
 /**
@@ -93,6 +103,17 @@ export function formatActionParams(action: RecordedAction): string {
       const params = action.params as { command: string }
       return params.command
     }
+    case 'assert': {
+      const params = action.params as AssertParams
+      // 优先显示用户自定义描述
+      if (params.description) {
+        return params.description
+      }
+      // 默认显示条件数量和运算符
+      const count = params.conditions.length
+      const op = params.operator.toUpperCase()
+      return `${count}个条件 (${op})`
+    }
     default:
       return JSON.stringify(action.params)
   }
@@ -101,7 +122,7 @@ export function formatActionParams(action: RecordedAction): string {
 /**
  * 获取操作类型对应的颜色
  */
-export function getActionTypeColor(type: string): 'default' | 'primary' | 'success' | 'warning' | 'error' {
+export function getActionTypeColor(type: string): 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info' {
   switch (type) {
     case 'tap':
       return 'primary'
@@ -115,6 +136,8 @@ export function getActionTypeColor(type: string): 'default' | 'primary' | 'succe
     case 'back':
     case 'home':
       return 'error'
+    case 'assert':
+      return 'info'
     default:
       return 'default'
   }

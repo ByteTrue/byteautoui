@@ -25,6 +25,22 @@
           {{ recorder.isPaused.value ? t.continueRecording : t.pauseRecording }}
         </n-button>
 
+        <!-- 断言按钮 - 录制中或有已录制内容时可用 -->
+        <n-dropdown
+          v-if="recorder.isRecording.value || recorder.actionCount.value > 0"
+          trigger="click"
+          :options="assertMenuOptions"
+          @select="handleAssertMenuSelect"
+          :disabled="recorder.isPaused.value"
+        >
+          <n-button :disabled="recorder.isPaused.value">
+            <template #icon>
+              <n-icon><CheckmarkDoneOutline /></n-icon>
+            </template>
+            {{ t.assert }}
+          </n-button>
+        </n-dropdown>
+
         <n-button :disabled="recorder.actionCount.value === 0" @click="$emit('clear-recording')">
           {{ t.clearRecording }} ({{ recorder.actionCount.value }})
         </n-button>
@@ -53,29 +69,50 @@
     <div class="steps-section">
       <h3>{{ t.operationSteps }} ({{ recorder.actionCount.value }})</h3>
 
-      <div v-if="recorder.actionCount.value > 0" class="steps-list">
-        <div
-          v-for="(action, index) in recorder.actions.value"
-          :key="action.id"
-          class="step-item"
-          :class="{ active: currentPlaybackIndex === index }"
-        >
-          <span class="step-index">{{ Number(index) + 1 }}</span>
-          <n-tag :type="getActionTypeColor(action.type)" size="small">
-            {{ action.type }}
-          </n-tag>
-          <span class="step-details">{{ formatActionParams(action) }}</span>
-          <span class="step-time">{{ formatRelativeTime(action.relativeTime) }}</span>
-          <n-button-group size="tiny">
-            <n-button @click="$emit('edit-action', action)">
-              <n-icon><CreateOutline /></n-icon>
-            </n-button>
-            <n-button @click="$emit('delete-action', action.id)">
-              <n-icon><TrashOutline /></n-icon>
-            </n-button>
-          </n-button-group>
-        </div>
-      </div>
+      <draggable
+        v-if="recorder.actionCount.value > 0"
+        v-model="recorder.actions.value"
+        item-key="id"
+        class="steps-list"
+        handle=".drag-handle"
+        ghost-class="step-item-ghost"
+        :disabled="isPlaybackActive || recorder.isRecording.value"
+        @end="handleDragEnd"
+      >
+        <template #item="{ element: action, index }">
+          <div
+            class="step-item"
+            :class="getStepResultClass(action, index)"
+          >
+            <span class="drag-handle" :class="{ disabled: isPlaybackActive || recorder.isRecording.value }">
+              <n-icon><ReorderThreeOutline /></n-icon>
+            </span>
+            <span class="step-index">{{ Number(index) + 1 }}</span>
+            <n-tag :type="getActionTypeColor(action.type)" size="small">
+              {{ action.type }}
+            </n-tag>
+            <span class="step-details">{{ formatActionParams(action) }}</span>
+            <!-- 断言结果标签 -->
+            <n-tag
+              v-if="getAssertResultTag(action)"
+              :type="getAssertResultTag(action)!.type"
+              size="small"
+              class="assert-result-tag"
+            >
+              {{ getAssertResultTag(action)!.text }}
+            </n-tag>
+            <span class="step-time">{{ formatWaitAfter(action.waitAfter) }}</span>
+            <n-button-group size="tiny">
+              <n-button @click="$emit('edit-action', action)">
+                <n-icon><CreateOutline /></n-icon>
+              </n-button>
+              <n-button @click="$emit('delete-action', action.id)">
+                <n-icon><TrashOutline /></n-icon>
+              </n-button>
+            </n-button-group>
+          </div>
+        </template>
+      </draggable>
 
       <n-empty v-else :description="t.noOperations" />
     </div>
@@ -83,39 +120,89 @@
 </template>
 
 <script setup lang="ts">
-import { NButton, NSpace, NTag, NIcon, NButtonGroup, NEmpty } from 'naive-ui'
+import { NButton, NSpace, NTag, NIcon, NButtonGroup, NEmpty, NDropdown } from 'naive-ui'
 import {
   RadioButtonOnOutline,
   StopCircleOutline,
   SaveOutline,
   CreateOutline,
   TrashOutline,
+  CheckmarkDoneOutline,
+  ReorderThreeOutline,
 } from '@vicons/ionicons5'
-import type { RecordedAction } from '@/types/recording'
+import draggable from 'vuedraggable'
+import type { RecordedAction, StepResult } from '@/types/recording'
 import {
   formatDuration,
-  formatRelativeTime,
+  formatWaitAfter,
   formatActionParams,
   getActionTypeColor,
 } from '@/utils/recordingFormatters'
+import { computed } from 'vue'
 
 interface Props {
   recorder: any // useRecorder composable
   currentPlaybackIndex: number
   isPlaybackActive: boolean
   t: any // i18n translations
+  stepResults?: Map<string, StepResult> // 步骤执行结果
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
-defineEmits<{
+const emit = defineEmits<{
   'toggle-recording': []
   'toggle-pause': []
   'clear-recording': []
   'save-recording': []
   'edit-action': [action: RecordedAction]
   'delete-action': [id: string]
+  'assert-menu-select': [key: string]
+  'reorder-actions': [actions: RecordedAction[]]
 }>()
+
+// 断言菜单选项
+const assertMenuOptions = computed(() => [
+  { label: props.t.elementAssertion, key: 'element' },
+  { label: props.t.screenshotAssertion, key: 'screenshot' },
+  { label: props.t.combinedAssertion, key: 'combined' },
+])
+
+// 断言菜单选择处理
+function handleAssertMenuSelect(key: string) {
+  emit('assert-menu-select', key)
+}
+
+// 拖拽结束处理 - 重新计算相对时间
+function handleDragEnd() {
+  // 通知父组件重新排序后的actions（vuedraggable已经修改了数组顺序）
+  emit('reorder-actions', props.recorder.actions.value)
+}
+
+// 获取步骤结果样式类
+function getStepResultClass(action: RecordedAction, index: number): Record<string, boolean> {
+  const result = props.stepResults?.get(action.id)
+  return {
+    active: props.currentPlaybackIndex === index,
+    pending: !result && props.isPlaybackActive && index > props.currentPlaybackIndex,
+    running: result?.status === 'running',
+    success: result?.status === 'success',
+    failed: result?.status === 'failed',
+    dimmed: props.isPlaybackActive && !result && index > props.currentPlaybackIndex,
+  }
+}
+
+// 获取断言结果标签
+function getAssertResultTag(action: RecordedAction): { show: boolean; text: string; type: 'success' | 'error' } | null {
+  if (action.type !== 'assert') return null
+  const result = props.stepResults?.get(action.id)
+  if (!result || result.status === 'pending' || result.status === 'running') return null
+  return {
+    show: true,
+    text: result.status === 'success' ? 'PASS' : 'FAIL',
+    type: result.status === 'success' ? 'success' : 'error',
+  }
+}
 </script>
 
 <style scoped>
@@ -190,6 +277,37 @@ defineEmits<{
   background: var(--n-color-primary-hover);
 }
 
+/* 回放状态可视化 */
+.step-item.dimmed {
+  opacity: 0.5;
+}
+
+.step-item.running {
+  border-left-color: var(--n-color-warning);
+  background: rgba(255, 193, 7, 0.1);
+  animation: pulse 1s infinite;
+}
+
+.step-item.success {
+  border-left-color: var(--n-color-success);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.step-item.failed {
+  border-left-color: var(--n-color-error);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.assert-result-tag {
+  font-weight: 600;
+  font-size: 10px;
+}
+
 .step-item:hover {
   background: var(--n-color-hover);
 }
@@ -215,5 +333,33 @@ defineEmits<{
   color: var(--n-text-color-3);
   min-width: 60px;
   text-align: right;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: var(--n-text-color-3);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s ease;
+}
+
+.drag-handle:hover {
+  color: var(--n-text-color);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle.disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.step-item-ghost {
+  opacity: 0.5;
+  background: var(--n-color-primary-hover);
+  border-left-color: var(--n-color-primary);
 }
 </style>

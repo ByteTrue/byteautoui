@@ -94,18 +94,23 @@
           v-for="(action, index) in player.recording.value.actions"
           :key="action.id"
           class="step-item"
-          :class="{
-            active: player.currentIndex.value === index,
-            completed: player.currentIndex.value > index,
-            pending: player.currentIndex.value < index,
-          }"
+          :class="getStepClass(action, index)"
         >
           <span class="step-index">{{ Number(index) + 1 }}</span>
           <n-tag :type="getActionTypeColor(action.type)" size="small">
             {{ action.type }}
           </n-tag>
           <span class="step-details">{{ formatActionParams(action) }}</span>
-          <span class="step-time">{{ formatRelativeTime(action.relativeTime) }}</span>
+          <!-- 断言结果标签 -->
+          <n-tag
+            v-if="getAssertResultTag(action)"
+            :type="getAssertResultTag(action)!.type"
+            size="small"
+            class="assert-result-tag"
+          >
+            {{ getAssertResultTag(action)!.text }}
+          </n-tag>
+          <span class="step-time">{{ formatWaitAfter(action.waitAfter) }}</span>
         </div>
       </div>
       <n-empty v-else :description="t.selectRecording" />
@@ -136,11 +141,12 @@ import {
   CreateOutline,
 } from '@vicons/ionicons5'
 import type { RecordingMetadata } from '@/api/recording'
+import type { RecordedAction, StepResult } from '@/types/recording'
 import {
   formatFileSize,
   formatDate,
   formatActionParams,
-  formatRelativeTime,
+  formatWaitAfter,
   getActionTypeColor,
   getPlaybackStateColor,
   getPlaybackStateText,
@@ -304,6 +310,33 @@ function nodeProps({ option }: { option: TreeOption }) {
     },
   }
 }
+
+// 获取步骤样式类 - 基于实际执行结果
+function getStepClass(action: RecordedAction, index: number): Record<string, boolean> {
+  const result = props.player.getStepResult(action.id)
+  const isPlaying = props.player.isPlaying.value || props.player.isPaused.value
+  const currentIndex = props.player.currentIndex.value
+
+  return {
+    active: currentIndex === index && isPlaying,
+    running: result?.status === 'running',
+    success: result?.status === 'success',
+    failed: result?.status === 'failed',
+    // 未执行且正在回放中的步骤暗淡显示
+    dimmed: isPlaying && !result && index > currentIndex,
+  }
+}
+
+// 获取断言结果标签
+function getAssertResultTag(action: RecordedAction): { text: string; type: 'success' | 'error' } | null {
+  if (action.type !== 'assert') return null
+  const result = props.player.getStepResult(action.id)
+  if (!result || result.status === 'pending' || result.status === 'running') return null
+  return {
+    text: result.status === 'success' ? 'PASS' : 'FAIL',
+    type: result.status === 'success' ? 'success' : 'error',
+  }
+}
 </script>
 
 <style scoped>
@@ -388,12 +421,35 @@ function nodeProps({ option }: { option: TreeOption }) {
   background: var(--n-color-primary-hover);
 }
 
-.step-item.completed {
-  opacity: 0.6;
+/* 回放状态可视化 */
+.step-item.dimmed {
+  opacity: 0.5;
 }
 
-.step-item.pending {
-  opacity: 0.4;
+.step-item.running {
+  border-left-color: var(--n-color-warning);
+  background: rgba(255, 193, 7, 0.1);
+  animation: pulse 1s infinite;
+}
+
+.step-item.success {
+  border-left-color: var(--n-color-success);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.step-item.failed {
+  border-left-color: var(--n-color-error);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.assert-result-tag {
+  font-weight: 600;
+  font-size: 10px;
 }
 
 .step-index {

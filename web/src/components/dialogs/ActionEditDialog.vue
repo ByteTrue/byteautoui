@@ -142,10 +142,78 @@
         </n-form-item>
       </template>
 
-      <!-- 通用字段：相对时间 -->
-      <n-form-item :label="t.actions.relativeTime" path="relativeTime">
+      <!-- Assert 断言专属字段 -->
+      <template v-if="editingAction.type === 'assert'">
+        <!-- 逻辑运算符 -->
+        <n-form-item label="逻辑运算">
+          <n-radio-group v-model:value="formData.params.operator">
+            <n-radio value="and">AND (所有条件满足)</n-radio>
+            <n-radio value="or">OR (任一条件满足)</n-radio>
+          </n-radio-group>
+        </n-form-item>
+
+        <!-- 条件列表（只读展示） -->
+        <n-form-item label="断言条件">
+          <div class="assert-conditions-list">
+            <div
+              v-for="(condition, index) in formData.params.conditions"
+              :key="index"
+              class="assert-condition-item"
+            >
+              <n-tag :type="condition.type === 'element' ? 'success' : 'info'" size="small">
+                {{ condition.type === 'element' ? '元素' : '图片' }}
+              </n-tag>
+              <span class="condition-detail">
+                <template v-if="condition.type === 'element'">
+                  {{ condition.selector.xpath }}
+                </template>
+                <template v-else>
+                  {{ condition.template.name || '模板图片' }} ({{ (condition.template.threshold * 100).toFixed(0) }}%)
+                </template>
+              </span>
+              <n-tag :type="condition.expect === 'exists' ? 'primary' : 'warning'" size="small">
+                {{ condition.expect === 'exists' ? '存在' : '不存在' }}
+              </n-tag>
+            </div>
+            <n-empty v-if="!formData.params.conditions?.length" description="无断言条件" size="small" />
+          </div>
+        </n-form-item>
+
+        <!-- 等待配置 -->
+        <n-form-item label="等待重试">
+          <n-switch v-model:value="waitEnabled" />
+        </n-form-item>
+
+        <template v-if="waitEnabled">
+          <n-form-item label="超时时间">
+            <n-input-number
+              v-model:value="formData.params.wait.timeout"
+              :min="100"
+              :max="30000"
+              :step="100"
+              style="width: 100%"
+            >
+              <template #suffix>毫秒</template>
+            </n-input-number>
+          </n-form-item>
+          <n-form-item label="重试间隔">
+            <n-input-number
+              v-model:value="formData.params.wait.interval"
+              :min="100"
+              :max="5000"
+              :step="100"
+              style="width: 100%"
+            >
+              <template #suffix>毫秒</template>
+            </n-input-number>
+          </n-form-item>
+        </template>
+      </template>
+
+      <!-- 通用字段：完成后等待时间 -->
+      <n-form-item :label="t.actions.waitAfter" path="waitAfter">
         <n-input-number
-          v-model:value="formData.relativeTime"
+          v-model:value="formData.waitAfter"
           :min="0"
           :step="100"
           :precision="0"
@@ -168,6 +236,10 @@ import {
   NInput,
   NTag,
   NDivider,
+  NRadioGroup,
+  NRadio,
+  NSwitch,
+  NEmpty,
   type FormInst,
   type FormRules,
 } from 'naive-ui'
@@ -209,11 +281,28 @@ const dialogTitle = computed(() => {
 
 // 表单数据（深拷贝避免污染原数据）
 const formData = ref<any>({
-  relativeTime: 0,
+  waitAfter: 0,
   coords: { x: 0, y: 0, scaleX: 0, scaleY: 0 },
   endCoords: { x: 0, y: 0, scaleX: 0, scaleY: 0 },
   xpath: { selector: '', fallbackCoords: { x: 0, y: 0 } },
   params: {},
+})
+
+// 断言等待开关的计算属性
+const waitEnabled = computed({
+  get: () => formData.value.params?.wait?.enabled ?? false,
+  set: (val: boolean) => {
+    if (!formData.value.params) formData.value.params = {}
+    if (val) {
+      formData.value.params.wait = {
+        enabled: true,
+        timeout: formData.value.params.wait?.timeout ?? 3000,
+        interval: formData.value.params.wait?.interval ?? 300,
+      }
+    } else {
+      formData.value.params.wait = undefined
+    }
+  },
 })
 
 // 监听 action 变化，重置表单
@@ -224,6 +313,11 @@ watch(
 
     // 深拷贝避免污染原数据
     formData.value = deepClone(newAction)
+
+    // 确保 waitAfter 存在
+    if (formData.value.waitAfter === undefined) {
+      formData.value.waitAfter = 0
+    }
 
     // 确保嵌套对象存在
     if (!formData.value.coords) {
@@ -238,17 +332,25 @@ watch(
     if (!formData.value.params) {
       formData.value.params = {}
     }
+    // 断言类型：确保 wait 结构存在
+    if (newAction.type === 'assert' && formData.value.params.wait?.enabled) {
+      formData.value.params.wait = {
+        enabled: true,
+        timeout: formData.value.params.wait.timeout ?? 3000,
+        interval: formData.value.params.wait.interval ?? 300,
+      }
+    }
   },
   { immediate: true }
 )
 
 // 验证规则
 const rules = computed<FormRules>(() => ({
-  relativeTime: [
+  waitAfter: [
     {
       required: true,
       type: 'number',
-      message: `${t.value.actions.relativeTime}不能为空`,
+      message: '完成后等待时间不能为空',
       trigger: 'blur',
     },
     { type: 'number', min: 0, message: '不能为负数', trigger: 'blur' },
@@ -287,9 +389,9 @@ async function handleSave() {
     // 计算更新内容
     const updates: Partial<RecordedAction> = {}
 
-    // 相对时间（所有类型都有）
-    if (formData.value.relativeTime !== editingAction.value.relativeTime) {
-      (updates as any).relativeTime = formData.value.relativeTime
+    // 完成后等待时间（所有类型都有）
+    if (formData.value.waitAfter !== editingAction.value.waitAfter) {
+      (updates as any).waitAfter = formData.value.waitAfter
     }
 
     // 根据类型复制修改的字段
@@ -381,6 +483,31 @@ async function handleSave() {
       if (formData.value.params.duration !== editingAction.value.params.duration) {
         (updates as any).params = { duration: formData.value.params.duration }
       }
+    } else if (editingAction.value.type === 'assert') {
+      // 断言类型：保存 operator 和 wait 配置
+      const currentParams = editingAction.value.params as any
+      const newParams = formData.value.params
+
+      // 检查是否有变更
+      const operatorChanged = newParams.operator !== currentParams.operator
+      const waitChanged =
+        (newParams.wait?.enabled ?? false) !== (currentParams.wait?.enabled ?? false) ||
+        newParams.wait?.timeout !== currentParams.wait?.timeout ||
+        newParams.wait?.interval !== currentParams.wait?.interval
+
+      if (operatorChanged || waitChanged) {
+        (updates as any).params = {
+          ...currentParams,
+          operator: newParams.operator,
+          wait: newParams.wait?.enabled
+            ? {
+                enabled: true,
+                timeout: newParams.wait.timeout,
+                interval: newParams.wait.interval,
+              }
+            : undefined,
+        }
+      }
     }
 
     // 发送保存事件
@@ -400,5 +527,32 @@ function handleCancel() {
 <style scoped>
 :deep(.n-form-item-label) {
   font-weight: 500;
+}
+
+.assert-conditions-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.assert-condition-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--n-color-embedded);
+  border-radius: 6px;
+}
+
+.condition-detail {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--n-text-color-2);
 }
 </style>

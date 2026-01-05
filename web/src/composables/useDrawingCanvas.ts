@@ -4,9 +4,9 @@
  */
 
 import { ref, computed } from 'vue'
-import { Shape, RectShape, CrosshairShape, TrackShape, type Point } from '@/utils/shapes'
+import { Shape, RectShape, CrosshairShape, TrackShape, CropRectShape, type Point } from '@/utils/shapes'
 
-export type ScreenMode = 'default' | 'pointer' | 'crosshair'
+export type ScreenMode = 'default' | 'pointer' | 'crosshair' | 'assert-element' | 'assert-screenshot'
 
 export function useDrawingCanvas() {
   const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -90,8 +90,16 @@ export function useDrawingCanvas() {
   /**
    * 仅清除指定类型的形状
    */
-  function clearShapesByType(type: 'hover' | 'select' | 'crosshair') {
+  function clearShapesByType(type: 'hover' | 'select' | 'crosshair' | 'crop') {
     shapes.value = shapes.value.filter(shape => shape.style !== type)
+    redraw()
+  }
+
+  /**
+   * 添加截图裁剪矩形
+   */
+  function addCropRect(x: number, y: number, width: number, height: number) {
+    shapes.value.push(new CropRectShape(x, y, width, height))
     redraw()
   }
 
@@ -111,6 +119,7 @@ export function useDrawingCanvas() {
     addRect,
     addCrosshair,
     addTrack,
+    addCropRect,
     clearShapes,
     clearShapesByType,
     resizeCanvas,
