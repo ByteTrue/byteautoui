@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from byteautoui import command_proxy
+from byteautoui import command_types
 from byteautoui.command_types import Command, CurrentAppResponse, InstallAppRequest, InstallAppResponse, TapRequest
 from byteautoui.model import DeviceInfo, Node, ShellResponse, WindowSize
 from byteautoui.provider import BaseProvider
@@ -101,7 +102,40 @@ def make_router(provider: BaseProvider) -> APIRouter:
         driver = provider.get_device_driver(serial)
         command_proxy.tap(driver, params)
         return {"status": "ok"}
-    
+
+    @router.post('/{serial}/command/assertElement')
+    def command_assert_element(serial: str, params: command_types.AssertElementRequest):
+        """元素断言"""
+        try:
+            driver = provider.get_device_driver(serial)
+            result = command_proxy.send_command(driver, Command.ASSERT_ELEMENT, params)
+            return result
+        except Exception as e:
+            logger.exception("assertElement failed")
+            return Response(content=str(e), media_type="text/plain", status_code=500)
+
+    @router.post('/{serial}/command/assertImage')
+    def command_assert_image(serial: str, params: command_types.AssertImageRequest):
+        """图片断言"""
+        try:
+            driver = provider.get_device_driver(serial)
+            result = command_proxy.send_command(driver, Command.ASSERT_IMAGE, params)
+            return result
+        except Exception as e:
+            logger.exception("assertImage failed")
+            return Response(content=str(e), media_type="text/plain", status_code=500)
+
+    @router.post('/{serial}/command/assertCombined')
+    def command_assert_combined(serial: str, params: command_types.AssertCombinedRequest):
+        """组合断言"""
+        try:
+            driver = provider.get_device_driver(serial)
+            result = command_proxy.send_command(driver, Command.ASSERT_COMBINED, params)
+            return result
+        except Exception as e:
+            logger.exception("assertCombined failed")
+            return Response(content=str(e), media_type="text/plain", status_code=500)
+
     @router.post('/{serial}/command/installApp')
     def install_app(serial: str, params: InstallAppRequest) -> InstallAppResponse:
         """Install app"""
