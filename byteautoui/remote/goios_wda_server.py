@@ -187,6 +187,7 @@ class GoIOSWDAServer:
             f"--udid={self.device_udid}"
         ]
 
+        # 临时使用 PIPE 捕获启动错误
         self._wda_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -212,6 +213,12 @@ class GoIOSWDAServer:
                 )
             raise RuntimeError(f"WDA failed to start: {error_msg}")
 
+        # 启动成功后，关闭 PIPE 避免缓冲区满阻塞（WDA 是长期运行进程）
+        if self._wda_process.stdout:
+            self._wda_process.stdout.close()
+        if self._wda_process.stderr:
+            self._wda_process.stderr.close()
+
         logger.info("WDA process started")
 
     def _start_port_forward(self):
@@ -228,6 +235,7 @@ class GoIOSWDAServer:
             f"--udid={self.device_udid}"
         ]
 
+        # 临时使用 PIPE 捕获启动错误
         self._forward_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -240,6 +248,12 @@ class GoIOSWDAServer:
         if self._forward_process.poll() is not None:
             _, stderr = self._forward_process.communicate()
             raise RuntimeError(f"Port forward failed: {stderr}")
+
+        # 启动成功后，关闭 PIPE 避免缓冲区满阻塞
+        if self._forward_process.stdout:
+            self._forward_process.stdout.close()
+        if self._forward_process.stderr:
+            self._forward_process.stderr.close()
 
         logger.info("Port forward established")
 
@@ -257,6 +271,7 @@ class GoIOSWDAServer:
             f"--udid={self.device_udid}"
         ]
 
+        # 临时使用 PIPE 捕获启动错误
         self._mjpeg_forward_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -272,6 +287,12 @@ class GoIOSWDAServer:
             logger.warning(f"MJPEG port forward failed (will fallback to WDA HTTP): {stderr}")
             self._mjpeg_forward_process = None
             return
+
+        # 启动成功后，关闭 PIPE 避免缓冲区满阻塞
+        if self._mjpeg_forward_process.stdout:
+            self._mjpeg_forward_process.stdout.close()
+        if self._mjpeg_forward_process.stderr:
+            self._mjpeg_forward_process.stderr.close()
 
         logger.info("MJPEG port forward established")
 
@@ -313,7 +334,7 @@ class GoIOSWDAServer:
         finally:
             try:
                 conn.close()
-            except:
+            except Exception:
                 pass
 
     def _wait_for_port_close(self, timeout: float = 2) -> bool:
@@ -413,7 +434,7 @@ class GoIOSWDAServer:
                 logger.debug(f"Error closing forward process: {e}")
                 try:
                     self._forward_process.kill()
-                except:
+                except Exception:
                     pass
             finally:
                 self._forward_process = None
@@ -427,7 +448,7 @@ class GoIOSWDAServer:
                 logger.debug(f"Error closing MJPEG forward process: {e}")
                 try:
                     self._mjpeg_forward_process.kill()
-                except:
+                except Exception:
                     pass
             finally:
                 self._mjpeg_forward_process = None
@@ -441,7 +462,7 @@ class GoIOSWDAServer:
                 logger.debug(f"Error closing WDA process: {e}")
                 try:
                     self._wda_process.kill()
-                except:
+                except Exception:
                     pass
             finally:
                 self._wda_process = None

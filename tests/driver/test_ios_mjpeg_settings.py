@@ -188,7 +188,8 @@ def test_mjpeg_capabilities_injected_and_driver_ops(monkeypatch):
     assert options["mjpegServerFramerate"] == 30
     assert options["mjpegServerScreenshotQuality"] == 50
     assert options["mjpegScalingFactor"] == 50
-    assert wda.settings_calls[-1] == ios_mjpeg_stream.build_wda_mjpeg_settings()
+    # When capability injection succeeds, settings API should NOT be called (no fallback needed)
+    assert len(wda.settings_calls) == 0, "settings API should not be called when capability succeeds"
 
     assert driver.start_mjpeg_stream() is True
     assert driver.get_mjpeg_url() == "http://127.0.0.1:9200"

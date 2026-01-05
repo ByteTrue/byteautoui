@@ -94,6 +94,7 @@ class IOSTunnelManager:
                 "--userspace"
             ]
 
+            # 临时使用 PIPE 捕获启动错误
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -107,6 +108,12 @@ class IOSTunnelManager:
                 # 进程已退出，读取错误
                 _, stderr = process.communicate()
                 raise RuntimeError(f"Tunnel failed to start: {stderr}")
+
+            # 启动成功后，关闭 PIPE 避免缓冲区满阻塞
+            if process.stdout:
+                process.stdout.close()
+            if process.stderr:
+                process.stderr.close()
 
             self._tunnel_processes[udid] = process
             self._device_ref_counts[udid] = 1
@@ -145,7 +152,7 @@ class IOSTunnelManager:
             try:
                 process.kill()
                 logger.info(f"Tunnel killed for {udid[:8]}...")
-            except:
+            except Exception:
                 pass
         finally:
             del self._tunnel_processes[udid]
