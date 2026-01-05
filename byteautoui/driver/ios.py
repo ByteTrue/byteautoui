@@ -6,20 +6,25 @@
 
 
 import json
+import logging
 from functools import partial
 from typing import List, Optional, Tuple
 from xml.etree import ElementTree
 
 import wdapy
 from PIL import Image
+from wdapy._proto import POST
 
 from byteautoui.command_types import CurrentAppResponse
 from byteautoui.driver.base_driver import BaseDriver
 from byteautoui.exceptions import IOSDriverException
 from byteautoui.model import Node, WindowSize
 from byteautoui.remote.goios_wda_server import GoIOSWDAServer
-from byteautoui.remote.ios_mjpeg_stream import IOSMJPEGStream
+from byteautoui.remote.ios_mjpeg_stream import IOSMJPEGStream, build_wda_mjpeg_settings
 from byteautoui.utils.usbmux import select_device
+
+
+logger = logging.getLogger(__name__)
 
 
 class IOSDriver(BaseDriver):
@@ -48,6 +53,60 @@ class IOSDriver(BaseDriver):
 
         # MJPEG流管理（用于指针模式）
         self._mjpeg_stream: Optional[IOSMJPEGStream] = None
+        self._configure_mjpeg_settings()
+
+    def _configure_mjpeg_settings(self):
+        settings = build_wda_mjpeg_settings()
+        session_id = self._try_apply_capabilities(settings)
+        # 仅在 capabilities 注入失败时尝试 /appium/settings 降级
+        if session_id is None:
+            self._apply_settings_api(settings)
+
+    def _try_apply_capabilities(self, settings: dict) -> Optional[str]:
+        """优先通过 session capabilities 注入 MJPEG 配置，失败则降级。"""
+        capabilities = {
+            "alwaysMatch": {
+                "appium:options": settings,
+            }
+        }
+        payload = {
+            "capabilities": capabilities,
+            "desiredCapabilities": capabilities["alwaysMatch"],
+        }
+        try:
+            response = self.wda.request(POST, "/session", payload)
+        except Exception as exc:
+            logger.warning("WDA capability injection failed, fallback to /appium/settings: %s", exc)
+            return None
+
+        session_id = response.get("sessionId")
+        if session_id is None:
+            value = response.get("value")
+            if isinstance(value, dict):
+                session_id = value.get("sessionId")
+
+        if session_id:
+            self.wda._session_id = session_id
+            return session_id
+
+        logger.warning("WDA capability injection returned no sessionId, fallback to /appium/settings")
+        return None
+
+    def _apply_settings_api(self, settings: dict) -> bool:
+        """通过 /appium/settings API 应用 MJPEG 配置。
+
+        Returns:
+            True 如果配置成功应用，False 如果失败
+        """
+        try:
+            self.wda.appium_settings(settings)
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Failed to apply MJPEG settings via /appium/settings: %s",
+                exc,
+            )
+            return False
     
     def _request(self, method: str, path: str, payload: Optional[dict] = None) -> bytes:
         conn = self.device.make_http_connection(port=8100)

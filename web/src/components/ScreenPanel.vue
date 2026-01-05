@@ -22,8 +22,13 @@
     <div class="canvas-container">
       <div class="canvas-wrapper">
         <!-- 底层：截图/视频 -->
+        <canvas
+          v-if="!scrcpyMode && useMjpegCanvas"
+          ref="mjpegCanvasRef"
+          class="screen-image"
+        />
         <img
-          v-if="!scrcpyMode"
+          v-else-if="!scrcpyMode"
           ref="imageRef"
           :src="imageUrl"
           class="screen-image"
@@ -59,6 +64,7 @@ import { EyeOutline, FingerPrintOutline } from '@vicons/ionicons5'
 import { useDrawingCanvas, type ScreenMode } from '@/composables/useDrawingCanvas'
 import { useScrcpy } from '@/composables/useScrcpy'
 import { useMjpeg } from '@/composables/useMjpeg'
+import { PREFER_MJPEG_CANVAS } from '@/config/mjpeg'
 import { useDeviceStore } from '@/stores/device'
 import { useI18nStore } from '@/stores/i18n'
 import type { Platform, UINode } from '@/api/types'
@@ -98,6 +104,7 @@ const mjpegMode = computed(() => platform.value === 'ios' && screenMode.value ==
 
 // 元素引用
 const imageRef = ref<HTMLImageElement | null>(null)
+const mjpegCanvasRef = ref<HTMLCanvasElement | null>(null)
 const videoRef = ref<HTMLVideoElement | null>(null)
 
 // Canvas 绘制
@@ -122,7 +129,11 @@ const mjpeg = useMjpeg({
   platform,
   serial,
   enabled: mjpegMode,
+  canvasRef: mjpegCanvasRef,
+  preferCanvas: PREFER_MJPEG_CANVAS,
 })
+
+const useMjpegCanvas = computed(() => mjpeg.useCanvasRenderer.value)
 
 // iOS MJPEG 启动失败提示
 watch(
@@ -251,9 +262,44 @@ onUnmounted(() => {
   scrcpy.disconnect()
 })
 
+// MJPEG Canvas 尺寸变化时同步绘制层（使用 ResizeObserver）
+let mjpegResizeObserver: ResizeObserver | null = null
+
+watch(
+  mjpegCanvasRef,
+  (canvas, prevCanvas) => {
+    // 清理旧的 observer
+    if (mjpegResizeObserver && prevCanvas) {
+      mjpegResizeObserver.unobserve(prevCanvas)
+    }
+    // 创建或复用 observer
+    if (canvas) {
+      if (!mjpegResizeObserver) {
+        mjpegResizeObserver = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            const target = entry.target as HTMLCanvasElement
+            if (target.width && target.height) {
+              resizeCanvas(target.width, target.height)
+            }
+          }
+        })
+      }
+      mjpegResizeObserver.observe(canvas)
+    }
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => {
+  if (mjpegResizeObserver) {
+    mjpegResizeObserver.disconnect()
+    mjpegResizeObserver = null
+  }
+})
+
 // 坐标转换：屏幕坐标 -> 设备坐标
 function getDeviceCoords(e: MouseEvent): { x: number; y: number } | null {
-  const element = imageRef.value || videoRef.value
+  const element = getActiveMediaElement()
   if (!element) return null
 
   const rect = element.getBoundingClientRect()
@@ -267,6 +313,12 @@ function getDeviceCoords(e: MouseEvent): { x: number; y: number } | null {
   const y = Math.round((e.clientY - rect.top) * scaleY)
 
   return { x, y }
+}
+
+function getActiveMediaElement(): HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null {
+  if (scrcpyMode.value) return videoRef.value
+  if (useMjpegCanvas.value) return mjpegCanvasRef.value
+  return imageRef.value
 }
 
 // 坐标转换：屏幕坐标 -> Canvas 坐标（考虑 Canvas 内部分辨率缩放）
