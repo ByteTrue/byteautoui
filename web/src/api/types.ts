@@ -111,15 +111,35 @@ export interface IOSConfig {
 }
 
 // 转换原始节点为 UINode
-export function convertRawNode(raw: RawUINode): UINode {
+export function convertRawNode(
+  raw: RawUINode,
+  screenSize?: { width: number; height: number }
+): UINode {
   const props = raw.properties || {}
+
+  // 带屏幕尺寸时将归一化坐标还原为像素
+  const toAbsoluteBounds = (bounds: [number, number, number, number]) => {
+    const [x1, y1, x2, y2] = bounds
+    const hasScreenSize = !!screenSize && screenSize.width > 0 && screenSize.height > 0
+    const looksNormalized = x2 <= 1 && y2 <= 1
+
+    if (looksNormalized && hasScreenSize) {
+      return [
+        Math.round(x1 * screenSize!.width),
+        Math.round(y1 * screenSize!.height),
+        Math.round(x2 * screenSize!.width),
+        Math.round(y2 * screenSize!.height),
+      ] as [number, number, number, number]
+    }
+    return bounds
+  }
 
   // 解析 bounds：优先使用API直接返回的bounds数组（iOS），否则从rect或字符串解析（Android）
   let boundsArray: [number, number, number, number] | undefined
 
   if (raw.bounds) {
-    // iOS：API直接返回bounds数组（归一化坐标0-1）
-    boundsArray = raw.bounds
+    // iOS/Android：API可能返回归一化坐标，必要时恢复为像素
+    boundsArray = toAbsoluteBounds(raw.bounds)
   } else if (raw.rect) {
     // Android (U2)：从rect转换为bounds数组（像素坐标）
     boundsArray = [
@@ -132,12 +152,12 @@ export function convertRawNode(raw: RawUINode): UINode {
     // Android (ADB)：解析bounds字符串 "[0,0][100,100]"
     const match = props.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)
     if (match && match[1] && match[2] && match[3] && match[4]) {
-      boundsArray = [
+      boundsArray = toAbsoluteBounds([
         parseInt(match[1], 10),
         parseInt(match[2], 10),
         parseInt(match[3], 10),
         parseInt(match[4], 10),
-      ]
+      ])
     }
   }
 
@@ -163,7 +183,7 @@ export function convertRawNode(raw: RawUINode): UINode {
     visible_to_user: props['visible-to-user'] === 'true',
     bounds: boundsArray,
     rect: raw.rect || undefined,
-    children: raw.children?.map(convertRawNode),
+    children: raw.children?.map(child => convertRawNode(child, screenSize)),
   }
 }
 
@@ -196,10 +216,12 @@ export function convertRawHierarchy(raw: RawHierarchyRoot): HierarchyData {
   // 获取 rotation
   const rotation = raw.properties?.rotation ? parseInt(raw.properties.rotation) : 0
 
+  const screenSize = width > 0 && height > 0 ? { width, height } : undefined
+
   return {
     width,
     height,
     rotation,
-    nodes: raw.children?.map(convertRawNode) || [],
+    nodes: raw.children?.map(child => convertRawNode(child, screenSize)) || [],
   }
 }

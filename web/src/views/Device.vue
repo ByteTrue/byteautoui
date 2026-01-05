@@ -471,6 +471,27 @@ const propertyDetails = computed<PropertyDetail[]>(() => {
   return details
 })
 
+// 将 bounds 转换为像素坐标（后端可能返回归一化坐标 0-1）
+function toAbsoluteBounds(bounds: [number, number, number, number]) {
+  const { width, height } = screenSize.value
+  const [x1, y1, x2, y2] = bounds
+  const looksNormalized = x2 <= 1 && y2 <= 1
+
+  if (looksNormalized) {
+    if (!width || !height) {
+      throw new Error('无法计算元素坐标：屏幕尺寸未知')
+    }
+    return [
+      Math.round(x1 * width),
+      Math.round(y1 * height),
+      Math.round(x2 * width),
+      Math.round(y2 * height),
+    ] as [number, number, number, number]
+  }
+
+  return bounds
+}
+
 // Handle ScreenPanel tap event
 function handleTap(_x: number, _y: number) {
   // Note: ScreenPanel already handles sending tap to device in pointer mode
@@ -516,19 +537,33 @@ async function tapElement() {
   }
 
   try {
-    // 计算元素中心坐标
-    const [x1, y1, x2, y2] = selectedNode.value.bounds
-    const centerX = Math.round((x1 + x2) / 2)
-    const centerY = Math.round((y1 + y2) / 2)
+    const xpath = currentXPath.value || selectedNode.value.xpath
 
-    // 执行点击操作
-    await tap(props.platform, props.serial, centerX, centerY)
-    message.success(`点击元素: (${centerX}, ${centerY})`)
+    if (xpath) {
+      await sendCommand(props.platform, props.serial, 'clickElement', {
+        by: 'xpath',
+        value: xpath,
+      })
+      message.success('已通过 XPath 点击元素')
+    } else {
+      // 无 XPath 时回退到坐标点击
+      const bounds = toAbsoluteBounds(selectedNode.value.bounds)
+      const [x1, y1, x2, y2] = bounds
+      const centerX = Math.round((x1 + x2) / 2)
+      const centerY = Math.round((y1 + y2) / 2)
+      await tap(props.platform, props.serial, centerX, centerY)
+      message.success(`点击元素: (${centerX}, ${centerY})`)
+    }
 
     // 如果正在录制，记录操作
     if (actionsPanelRef.value?.getIsRecording?.()) {
+      // 录制使用坐标，录制器会同时写入 XPath 作为定位信息
+      const bounds = toAbsoluteBounds(selectedNode.value.bounds)
+      const [x1, y1, x2, y2] = bounds
+      const centerX = Math.round((x1 + x2) / 2)
+      const centerY = Math.round((y1 + y2) / 2)
       await actionsPanelRef.value.recordTap(centerX, centerY, selectedNode.value)
-      message.info('已录制点击操作')
+      message.info('已录制点击操作（含 XPath）')
     }
   } catch (error) {
     message.error(`点击失败: ${error instanceof Error ? error.message : String(error)}`)
