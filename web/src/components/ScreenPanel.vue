@@ -11,6 +11,7 @@
         </n-radio-button>
       </n-radio-group>
       <div class="info-display">
+        <span v-if="showFps" class="fps-badge">{{ mjpeg.fps.value }} FPS</span>
         <span>{{ screenSize.width }}x{{ screenSize.height }}</span>
         <span>{{ mousePos.x }}, {{ mousePos.y }}</span>
         <span>{{ mousePosPercent.x }}%, {{ mousePosPercent.y }}%</span>
@@ -133,6 +134,9 @@ watch(
   }
 )
 
+// iOS 指针模式显示 FPS
+const showFps = computed(() => mjpegMode.value && mjpeg.fps.value > 0)
+
 // 动态图片 URL：iOS 指针模式使用 MJPEG，否则使用截图
 const imageUrl = computed(() => {
   if (mjpegMode.value && mjpeg.streamUrl.value) {
@@ -168,6 +172,11 @@ function handleImageLoad() {
   const width = imageRef.value.naturalWidth
   const height = imageRef.value.naturalHeight
   resizeCanvas(width, height)
+
+  // iOS MJPEG 模式：更新 FPS
+  if (mjpegMode.value) {
+    mjpeg.updateFps()
+  }
 }
 
 function handleImageError() {
@@ -558,6 +567,14 @@ defineExpose({
   font-family: var(--md-font-family-mono);
   font-size: var(--md-font-size-xs);
   color: var(--md-text-secondary);
+}
+
+.fps-badge {
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  padding: 2px 6px;
+  border-radius: var(--md-shape-corner-small);
+  font-weight: 500;
 }
 
 .canvas-container {

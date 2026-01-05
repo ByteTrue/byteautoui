@@ -179,8 +179,14 @@ def make_router(provider: BaseProvider) -> APIRouter:
                 return Response(content=str(e), media_type="text/plain", status_code=500)
 
         @router.get('/{serial}/mjpeg')
-        def get_mjpeg_stream(serial: str):
-            """获取 iOS MJPEG 流（代理 go-ios screenshot --stream）"""
+        async def get_mjpeg_stream(serial: str):
+            """获取 iOS MJPEG 流（代理 WDA 原生 MJPEG 端点）
+
+            优化点：
+            - 使用异步 httpx.AsyncClient
+            - 增大 chunk_size 到 32KB（减少系统调用次数）
+            - 启用连接复用
+            """
             try:
                 import httpx
                 from starlette.background import BackgroundTask
@@ -199,30 +205,36 @@ def make_router(provider: BaseProvider) -> APIRouter:
                 if not mjpeg_url:
                     return Response(content="mjpeg url not available", media_type="text/plain", status_code=500)
 
-                client = httpx.Client(timeout=None)
+                # 使用异步客户端，增大超时和连接池
+                client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(None),  # 无超时（流式连接）
+                    limits=httpx.Limits(max_keepalive_connections=5),
+                )
                 try:
                     req = client.build_request("GET", mjpeg_url)
-                    upstream = client.send(req, stream=True, follow_redirects=True)
+                    upstream = await client.send(req, stream=True, follow_redirects=True)
                     upstream.raise_for_status()
                 except Exception:
-                    client.close()
+                    await client.aclose()
                     raise
 
                 content_type = upstream.headers.get("Content-Type", "multipart/x-mixed-replace")
 
-                def _cleanup():
+                async def _cleanup():
                     try:
-                        upstream.close()
+                        await upstream.aclose()
                     finally:
-                        client.close()
+                        await client.aclose()
 
+                # 32KB chunk size（典型 JPEG 帧 20-50KB，减少碎片化）
                 return StreamingResponse(
-                    upstream.iter_bytes(chunk_size=8192),
+                    upstream.aiter_bytes(chunk_size=32768),
                     media_type=content_type,
                     headers={
                         "Cache-Control": "no-cache, no-store, must-revalidate",
                         "Pragma": "no-cache",
                         "Expires": "0",
+                        "X-Accel-Buffering": "no",  # 禁用 nginx 缓冲
                     },
                     background=BackgroundTask(_cleanup),
                 )

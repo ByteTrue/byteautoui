@@ -27,7 +27,6 @@ from byteautoui.model import Node
 from byteautoui.provider import AndroidProvider, HarmonyProvider, IOSProvider
 from byteautoui.remote.scrcpy import ScrcpyServer
 from byteautoui.remote.goios_wda_server import GoIOSWDAServer
-from byteautoui.remote.ios_screenshot_server import IOSScreenshotServer
 from byteautoui.remote.ios_tunnel_manager import get_tunnel_manager
 from byteautoui.router.android import router as android_device_router
 from byteautoui.router.device import make_router
@@ -49,10 +48,6 @@ async def shutdown_event():
         GoIOSWDAServer.cleanup_all()
     except Exception:
         logger.exception("Failed to cleanup go-ios WDA servers")
-    try:
-        IOSScreenshotServer.cleanup_all()
-    except Exception:
-        logger.exception("Failed to cleanup iOS screenshot servers")
     try:
         tunnel_manager = get_tunnel_manager()
         tunnel_manager.cleanup()

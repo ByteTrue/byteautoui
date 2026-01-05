@@ -119,11 +119,17 @@ class IOSDriver(BaseDriver):
     def start_mjpeg_stream(self) -> bool:
         """启动MJPEG流（用于指针模式）
 
-        注意：go-ios screenshot --stream 默认 3333，可自动选择可用端口
+        使用 WDA 原生 MJPEG 端点，默认端口 9100
         """
         if not self._mjpeg_stream:
+            # 获取 WDA 服务器的 MJPEG 端口配置
+            mjpeg_port = None
+            if self._wda_server:
+                mjpeg_port = getattr(self._wda_server, 'mjpeg_port', None)
+
             self._mjpeg_stream = IOSMJPEGStream(
                 device_udid=self.device.serial,
+                mjpeg_port=mjpeg_port,
             )
         return self._mjpeg_stream.start_recording()
 

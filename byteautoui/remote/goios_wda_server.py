@@ -37,20 +37,25 @@ class GoIOSWDAServer:
     职责：
     1. 启动go-ios tunnel (iOS 17+需要)
     2. 启动WDA (使用ios runwda命令)
-    3. 端口转发 (8100:8100)
+    3. 端口转发 (8100:8100 for HTTP, 9100:9100 for MJPEG)
     4. 清理资源
     """
 
-    def __init__(self, device_udid: str, wda_bundle_id: Optional[str] = None, wda_port: Optional[int] = None):
+    # WDA MJPEG 默认端口
+    DEFAULT_MJPEG_PORT = 9100
+
+    def __init__(self, device_udid: str, wda_bundle_id: Optional[str] = None, wda_port: Optional[int] = None, mjpeg_port: Optional[int] = None):
         """
         Args:
             device_udid: 设备UDID
             wda_bundle_id: WDA的bundle ID，如果为None则从配置读取或使用默认值
             wda_port: WDA端口，如果为None则从配置读取或使用8100
+            mjpeg_port: MJPEG端口，如果为None则使用默认9100
         """
         self.device_udid = device_udid
         self._wda_process: Optional[subprocess.Popen] = None
         self._forward_process: Optional[subprocess.Popen] = None
+        self._mjpeg_forward_process: Optional[subprocess.Popen] = None
 
         # 获取配置管理器
         self._config_manager = get_ios_config_manager()
@@ -71,7 +76,10 @@ class GoIOSWDAServer:
             self.wda_port = wda_port
             self._config_manager.set_wda_port(device_udid, wda_port)
 
-        logger.info(f"GoIOSWDAServer initialized for {device_udid[:8]}... with bundle_id={self.wda_bundle_id}, port={self.wda_port}")
+        # MJPEG 端口配置
+        self.mjpeg_port = mjpeg_port or self.DEFAULT_MJPEG_PORT
+
+        logger.info(f"GoIOSWDAServer initialized for {device_udid[:8]}... with bundle_id={self.wda_bundle_id}, port={self.wda_port}, mjpeg_port={self.mjpeg_port}")
         with _active_servers_lock:
             _active_servers.add(self)
 
@@ -125,9 +133,10 @@ class GoIOSWDAServer:
                     self._cleanup_stale_processes()
                     self._wait_for_port_close(timeout=2)
 
-                # 步骤2: 端口转发
+                # 步骤2: 端口转发 (WDA HTTP + MJPEG)
                 forward_time = time.time()
                 self._start_port_forward()
+                self._start_mjpeg_port_forward()
                 forward_cost = time.time() - forward_time
 
                 # 步骤3: 快速检查：WDA已可用则直接复用
@@ -206,7 +215,7 @@ class GoIOSWDAServer:
         logger.info("WDA process started")
 
     def _start_port_forward(self):
-        """启动端口转发"""
+        """启动端口转发（WDA HTTP）"""
         if self._forward_process and self._forward_process.poll() is None:
             return
         logger.info(f"Starting port forward {self.wda_port}:{self.wda_port}")
@@ -233,6 +242,38 @@ class GoIOSWDAServer:
             raise RuntimeError(f"Port forward failed: {stderr}")
 
         logger.info("Port forward established")
+
+    def _start_mjpeg_port_forward(self):
+        """启动端口转发（WDA MJPEG）"""
+        if self._mjpeg_forward_process and self._mjpeg_forward_process.poll() is None:
+            return
+        logger.info(f"Starting MJPEG port forward {self.mjpeg_port}:{self.mjpeg_port}")
+
+        cmd = [
+            "ios",
+            "forward",
+            str(self.mjpeg_port),
+            str(self.mjpeg_port),
+            f"--udid={self.device_udid}"
+        ]
+
+        self._mjpeg_forward_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        time.sleep(0.2)
+
+        if self._mjpeg_forward_process.poll() is not None:
+            _, stderr = self._mjpeg_forward_process.communicate()
+            # MJPEG 端口转发失败不是致命错误，只记录警告
+            logger.warning(f"MJPEG port forward failed (will fallback to WDA HTTP): {stderr}")
+            self._mjpeg_forward_process = None
+            return
+
+        logger.info("MJPEG port forward established")
 
     def _is_port_open(self, port: int, timeout: float = 1) -> bool:
         """检查端口是否可连接"""
@@ -363,7 +404,7 @@ class GoIOSWDAServer:
             _active_servers.discard(self)
         logger.info("Closing go-ios WDA server")
 
-        # 关闭端口转发
+        # 关闭端口转发（WDA HTTP）
         if self._forward_process:
             try:
                 self._forward_process.terminate()
@@ -376,6 +417,20 @@ class GoIOSWDAServer:
                     pass
             finally:
                 self._forward_process = None
+
+        # 关闭端口转发（MJPEG）
+        if self._mjpeg_forward_process:
+            try:
+                self._mjpeg_forward_process.terminate()
+                self._mjpeg_forward_process.wait(timeout=2)
+            except Exception as e:
+                logger.debug(f"Error closing MJPEG forward process: {e}")
+                try:
+                    self._mjpeg_forward_process.kill()
+                except:
+                    pass
+            finally:
+                self._mjpeg_forward_process = None
 
         # 关闭WDA
         if self._wda_process:
