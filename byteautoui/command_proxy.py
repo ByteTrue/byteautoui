@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+import base64
+import io
+import logging
 import time
 import typing
 from typing import Callable, Dict, List, Optional, Union
@@ -371,3 +374,146 @@ def stop_mjpeg_stream(driver: BaseDriver):
             raise RuntimeError("failed to stop iOS MJPEG stream")
         return {"success": True}
     raise NotImplementedError("stop_mjpeg_stream not supported by this driver")
+
+
+# ============ 断言命令处理器 ============
+
+from byteautoui.command_types import (
+    AssertElementRequest,
+    AssertImageRequest,
+    AssertCombinedRequest,
+    AssertResponse,
+    AssertExpect,
+)
+from byteautoui.assertion import (
+    validate_element_exists,
+    validate_image_exists,
+    execute_combined_assertion,
+)
+
+logger = logging.getLogger(__name__)
+
+
+@register(Command.ASSERT_ELEMENT)
+def assert_element(driver: BaseDriver, params: AssertElementRequest) -> AssertResponse:
+    """元素断言"""
+    try:
+        # 如果启用等待，需要重试逻辑
+        wait = params.wait
+        if wait and wait.enabled:
+            condition = {
+                'type': 'element',
+                'selector': params.selector.model_dump(),
+                'expect': params.expect.value,
+            }
+            success, message, details = execute_combined_assertion(
+                driver,
+                'and',  # 单条件用 and
+                [condition],
+                wait.model_dump()
+            )
+            return AssertResponse(success=success, message=message, details=details)
+
+        # 不等待，立即验证
+        found, details = validate_element_exists(driver, params.selector)
+
+        if params.expect == AssertExpect.EXISTS:
+            success = found
+            message = "元素存在" if found else "元素不存在"
+        else:
+            success = not found
+            message = "元素不存在" if success else "元素存在但预期不存在"
+
+        return AssertResponse(success=success, message=message, details=details)
+
+    except Exception as e:
+        logger.error(f"元素断言异常: {e}", exc_info=True)
+        return AssertResponse(
+            success=False,
+            message=f"断言异常: {str(e)}",
+            details={"error": str(e)}
+        )
+
+
+@register(Command.ASSERT_IMAGE)
+def assert_image(driver: BaseDriver, params: AssertImageRequest) -> AssertResponse:
+    """图片断言"""
+    try:
+        # 如果启用等待，需要重试逻辑
+        wait = params.wait
+        if wait and wait.enabled:
+            condition = {
+                'type': 'image',
+                'template': params.template.model_dump(),
+                'expect': params.expect.value,
+            }
+            success, message, details = execute_combined_assertion(
+                driver,
+                'and',
+                [condition],
+                wait.model_dump()
+            )
+            return AssertResponse(success=success, message=message, details=details)
+
+        # 不等待，立即验证
+        found, details = validate_image_exists(driver, params.template)
+
+        if params.expect == AssertExpect.EXISTS:
+            success = found
+            message = "图片存在" if found else "图片不存在"
+        else:
+            success = not found
+            message = "图片不存在" if success else "图片存在但预期不存在"
+
+        return AssertResponse(success=success, message=message, details=details)
+
+    except Exception as e:
+        logger.error(f"图片断言异常: {e}", exc_info=True)
+        return AssertResponse(
+            success=False,
+            message=f"断言异常: {str(e)}",
+            details={"error": str(e)}
+        )
+
+
+@register(Command.ASSERT_COMBINED)
+def assert_combined(driver: BaseDriver, params: AssertCombinedRequest) -> AssertResponse:
+    """组合断言"""
+    try:
+        conditions = [c.model_dump() for c in params.conditions]
+        wait_config = params.wait.model_dump() if params.wait else None
+
+        success, message, details = execute_combined_assertion(
+            driver,
+            params.operator,
+            conditions,
+            wait_config,
+            platform=params.platform  # 传递平台参数
+        )
+
+        # 如果失败，捕获失败截图
+        screenshot_base64 = None
+        if not success:
+            try:
+                screenshot_pil = driver.screenshot(0).convert("RGB")
+                buf = io.BytesIO()
+                screenshot_pil.save(buf, format="JPEG")
+                screenshot_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+            except Exception as e:
+                logger.error(f"捕获失败截图失败: {e}")
+
+        return AssertResponse(
+            success=success,
+            message=message,
+            details=details,
+            screenshot=screenshot_base64
+        )
+
+    except Exception as e:
+        logger.error(f"组合断言异常: {e}", exc_info=True)
+        return AssertResponse(
+            success=False,
+            message=f"断言异常: {str(e)}",
+            details={"error": str(e)}
+        )
+
