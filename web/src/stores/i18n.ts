@@ -131,6 +131,12 @@ const messages = {
       operationSteps: '操作步骤',
       noOperations: '暂无录制操作',
 
+      // 断言
+      assert: '断言',
+      elementAssertion: '元素断言',
+      screenshotAssertion: '截图断言',
+      combinedAssertion: '组合断言',
+
       // 回放控制
       play: '播放',
       pause: '暂停',
@@ -154,7 +160,7 @@ const messages = {
       editAction: '编辑操作',
       actionType: '操作类型',
       waitTime: '等待时间',
-      relativeTime: '相对时间',
+      waitAfter: '完成后等待',
       milliseconds: '毫秒',
       seconds: '秒',
 
@@ -212,6 +218,7 @@ const messages = {
         command: '命令',
         back: '返回',
         home: '主页',
+        assert: '断言',
       },
     },
 
@@ -373,6 +380,12 @@ const messages = {
       operationSteps: 'Steps',
       noOperations: 'No recorded operations',
 
+      // Assertions
+      assert: 'Assert',
+      elementAssertion: 'Element Assertion',
+      screenshotAssertion: 'Screenshot Assertion',
+      combinedAssertion: 'Combined Assertion',
+
       // Playback controls
       play: 'Play',
       pause: 'Pause',
@@ -396,7 +409,7 @@ const messages = {
       editAction: 'Edit Action',
       actionType: 'Action Type',
       waitTime: 'Wait Time',
-      relativeTime: 'Relative Time',
+      waitAfter: 'Wait After',
       milliseconds: 'ms',
       seconds: 's',
 
@@ -454,6 +467,7 @@ const messages = {
         command: 'Command',
         back: 'Back',
         home: 'Home',
+        assert: 'Assert',
       },
     },
 

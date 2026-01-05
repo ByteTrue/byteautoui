@@ -41,6 +41,7 @@ import { useDeviceStore } from '@/stores/device'
 import { useThemeStore } from '@/stores/theme'
 import { useI18nStore } from '@/stores/i18n'
 import type { Platform, UINode } from '@/api/types'
+import type { ElementCondition, ImageCondition, AssertParams } from '@/types/recording'
 import { sendCommand, tap, setIOSConfig } from '@/api'
 import ScreenPanel from '@/components/ScreenPanel.vue'
 import HierarchyPanel from '@/components/panels/HierarchyPanel.vue'
@@ -48,6 +49,11 @@ import ActionsPanel from '@/components/panels/ActionsPanel.vue'
 import PackagePanel from '@/components/panels/PackagePanel.vue'
 import DeviceSelector from '@/components/DeviceSelector.vue'
 import IOSConfigDialog from '@/components/dialogs/IOSConfigDialog.vue'
+import ElementSelectorDialog from '@/components/dialogs/ElementSelectorDialog.vue'
+import ImageSelectorDialog from '@/components/dialogs/ImageSelectorDialog.vue'
+import AssertConfigDialog from '@/components/dialogs/AssertConfigDialog.vue'
+import type { ScreenMode } from '@/composables/useDrawingCanvas'
+import { MAX_TEMPLATE_SIZE } from '@/constants/assertion'
 
 const props = defineProps<{
   platform: Platform
@@ -62,6 +68,21 @@ const i18nStore = useI18nStore()
 
 // ActionsPanel引用
 const actionsPanelRef = ref<InstanceType<typeof ActionsPanel> | null>(null)
+
+// 断言对话框引用
+const elementSelectorDialogRef = ref<InstanceType<typeof ElementSelectorDialog> | null>(null)
+const imageSelectorDialogRef = ref<InstanceType<typeof ImageSelectorDialog> | null>(null)
+const assertConfigDialogRef = ref<InstanceType<typeof AssertConfigDialog> | null>(null)
+
+// 断言模式状态
+const assertMode = ref<'element' | 'screenshot' | null>(null)
+
+// 计算当前屏幕模式（用于传递给 ScreenPanel）
+const computedScreenMode = computed<ScreenMode | undefined>(() => {
+  if (assertMode.value === 'element') return 'assert-element'
+  if (assertMode.value === 'screenshot') return 'assert-screenshot'
+  return undefined
+})
 
 const activeTab = ref('hierarchy')
 const showDeviceSelector = ref(false)
@@ -529,6 +550,116 @@ async function handleRecordSwipe(
   }
 }
 
+// 断言菜单选择处理
+function handleAssertMenuSelect(key: string) {
+  if (key === 'element') {
+    // 进入元素选择模式
+    assertMode.value = 'element'
+    message.info('请点击屏幕上的元素')
+  } else if (key === 'screenshot') {
+    // 进入截图框选模式
+    assertMode.value = 'screenshot'
+    message.info('请在屏幕上拖拽框选区域')
+  } else if (key === 'combined') {
+    // 直接打开组合断言配置对话框
+    assertConfigDialogRef.value?.show()
+  }
+}
+
+// 元素选择完成
+function handleElementSelected(node: UINode) {
+  // 提取 XPath（优先使用 node.xpath，降级为属性生成）
+  const xpath = node.xpath || generateXPath('id', node) || `//*[@class="${node.class_name}"]`
+
+  // 提取属性
+  const attributes: { text?: string; resourceId?: string; className?: string } = {}
+  if (node.text) attributes.text = node.text
+  if (node.resource_id) attributes.resourceId = node.resource_id
+  if (node.class_name) attributes.className = node.class_name
+
+  // 打开 ElementSelectorDialog 并预填充
+  elementSelectorDialogRef.value?.show()
+  elementSelectorDialogRef.value?.prefill({ xpath, attributes })
+
+  // 退出选择模式
+  assertMode.value = null
+}
+
+// 截图裁剪完成
+function handleScreenshotCropped(base64: string) {
+  // 检查大小限制 - 需要先去除 data URI 前缀再计算
+  const base64Data = base64.includes(',') ? base64.split(',')[1]! : base64
+  const sizeBytes = Math.ceil((base64Data.length * 3) / 4)  // Base64 解码后大小估算
+  if (sizeBytes > MAX_TEMPLATE_SIZE) {
+    message.error(`裁剪区域过大 (${(sizeBytes / 1024).toFixed(1)}KB)，请选择更小的区域`)
+    // 不退出模式，让用户可以重新选择
+    return
+  }
+
+  // 打开 ImageSelectorDialog 并预填充
+  imageSelectorDialogRef.value?.show()
+  imageSelectorDialogRef.value?.setTemplateData(base64)
+
+  // 退出框选模式
+  assertMode.value = null
+}
+
+// 元素条件确认
+function handleElementConditionConfirm(condition: ElementCondition) {
+  // 添加到 AssertConfigDialog
+  assertConfigDialogRef.value?.addCondition(condition)
+  assertConfigDialogRef.value?.show()
+}
+
+// 图片条件确认
+function handleImageConditionConfirm(condition: ImageCondition) {
+  // 添加到 AssertConfigDialog
+  assertConfigDialogRef.value?.addCondition(condition)
+  assertConfigDialogRef.value?.show()
+}
+
+// 断言参数确认
+function handleAssertParamsConfirm(params: AssertParams) {
+  // 录制断言动作
+  actionsPanelRef.value?.recordAssert(params)
+  message.success('断言已添加')
+}
+
+// 编辑断言（打开AssertConfigDialog）
+function handleEditAssert(action: RecordedAction) {
+  assertConfigDialogRef.value?.edit(action)
+}
+
+// 断言更新确认（编辑模式）
+function handleAssertParamsUpdate(id: string, params: AssertParams) {
+  // 使用recorder.updateAction更新断言
+  const recorder = actionsPanelRef.value?.recorder
+  if (recorder) {
+    const success = recorder.updateAction(id, { params })
+    if (success) {
+      message.success('断言已更新')
+    } else {
+      message.error('更新失败：断言不存在')
+    }
+  }
+}
+
+// 从 AssertConfigDialog 中添加元素断言
+function handleAddElementFromDialog() {
+  // 先隐藏对话框，让用户可以选择元素
+  assertConfigDialogRef.value?.hide()
+  assertMode.value = 'element'
+  message.info('请点击屏幕上的元素')
+}
+
+// 从 AssertConfigDialog 中添加图片断言
+function handleAddImageFromDialog() {
+  // 先隐藏对话框，让用户可以框选区域
+  assertConfigDialogRef.value?.hide()
+  assertMode.value = 'screenshot'
+  message.info('请在屏幕上拖拽框选区域')
+}
+
 // Element action functions (for view mode)
 async function tapElement() {
   if (!selectedNode.value || !selectedNode.value.bounds) {
@@ -589,7 +720,7 @@ async function refresh() {
   try {
     const result = await sendCommand(props.platform, props.serial, 'currentApp', {})
     if (result && typeof result === 'object' && 'package' in result) {
-      currentActivity.value = (result as any).package || ''
+      currentActivity.value = (result as { package: string }).package || ''
     }
   } catch (error) {
     // Ignore error, activity display is optional
@@ -947,9 +1078,12 @@ const swipeRight = () => executeCommand('swipeRight', {}, 'Swiped right', 'Swipe
                 :platform="platform"
                 :serial="serial"
                 :screen-size="screenSize"
+                :screen-mode="computedScreenMode"
                 @tap="handleTap"
                 @record-tap="handleRecordTap"
                 @record-swipe="handleRecordSwipe"
+                @element-selected="handleElementSelected"
+                @screenshot-cropped="handleScreenshotCropped"
               />
             </n-spin>
           </div>
@@ -1036,6 +1170,8 @@ const swipeRight = () => executeCommand('swipeRight', {}, 'Swiped right', 'Swipe
           ref="actionsPanelRef"
           :platform="platform"
           :serial="serial"
+          @assert-menu-select="handleAssertMenuSelect"
+          @edit-assert="handleEditAssert"
         />
 
         <!-- Package Manager Tab -->
@@ -1055,6 +1191,23 @@ const swipeRight = () => executeCommand('swipeRight', {}, 'Swiped right', 'Swipe
       :serial="serial"
       :error-message="iosConfigError"
       @confirm="handleIOSConfigConfirm"
+    />
+
+    <!-- 断言对话框 -->
+    <ElementSelectorDialog
+      ref="elementSelectorDialogRef"
+      @confirm="handleElementConditionConfirm"
+    />
+    <ImageSelectorDialog
+      ref="imageSelectorDialogRef"
+      @confirm="handleImageConditionConfirm"
+    />
+    <AssertConfigDialog
+      ref="assertConfigDialogRef"
+      @confirm="handleAssertParamsConfirm"
+      @update="handleAssertParamsUpdate"
+      @add-element="handleAddElementFromDialog"
+      @add-image="handleAddImageFromDialog"
     />
   </div>
 </template>

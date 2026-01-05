@@ -8,7 +8,7 @@ export interface Point {
   y: number
 }
 
-export type ShapeStyle = 'hover' | 'select' | 'crosshair'
+export type ShapeStyle = 'hover' | 'select' | 'crosshair' | 'crop'
 
 export abstract class Shape {
   name: string
@@ -130,5 +130,48 @@ export class TrackShape extends Shape {
     }
 
     ctx.stroke()
+  }
+}
+
+/**
+ * 截图框选矩形（半透明蓝色 + 虚线边框）
+ */
+export class CropRectShape extends Shape {
+  x: number
+  y: number
+  width: number
+  height: number
+
+  constructor(x: number, y: number, width: number, height: number) {
+    super('crop', 'crop')
+    this.x = x
+    this.y = y
+    this.width = width
+    this.height = height
+  }
+
+  draw(ctx: CanvasRenderingContext2D): void {
+    // 半透明蓝色填充
+    ctx.fillStyle = 'rgba(0, 120, 215, 0.2)'
+    ctx.fillRect(this.x, this.y, this.width, this.height)
+
+    // 白色虚线边框
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 2
+    ctx.setLineDash([5, 5])
+    ctx.strokeRect(this.x, this.y, this.width, this.height)
+    ctx.setLineDash([]) // 重置虚线
+
+    // 显示尺寸文本
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '14px monospace'
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+    ctx.shadowBlur = 4
+    ctx.fillText(
+      `${Math.round(this.width)} × ${Math.round(this.height)}`,
+      this.x + 5,
+      this.y + 20
+    )
+    ctx.shadowBlur = 0 // 重置阴影
   }
 }

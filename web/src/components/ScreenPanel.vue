@@ -75,6 +75,7 @@ const props = defineProps<{
   platform: Platform
   serial: string
   screenSize?: { width: number; height: number }
+  screenMode?: ScreenMode // 外部控制模式（用于断言）
 }>()
 
 const { platform, serial } = toRefs(props)
@@ -83,6 +84,8 @@ const emit = defineEmits<{
   tap: [x: number, y: number]
   recordTap: [x: number, y: number, selectedNode: UINode | null]
   recordSwipe: [startX: number, startY: number, endX: number, endY: number, duration: number, selectedNode: UINode | null]
+  'element-selected': [node: UINode]
+  'screenshot-cropped': [base64: string]
 }>()
 
 const message = useMessage()
@@ -98,6 +101,21 @@ const mousePos = ref({ x: 0, y: 0 })
 const isDrawing = ref(false)
 const trackPoints = ref<Point[]>([])
 
+// 截图框选状态
+const cropStartPoint = ref<Point | null>(null)
+const cropEndPoint = ref<Point | null>(null)
+
+// 同步外部传入的 screenMode
+watch(
+  () => props.screenMode,
+  (mode) => {
+    if (mode) {
+      screenMode.value = mode
+    }
+  },
+  { immediate: true }
+)
+
 // 平台特定的视频模式判断
 const scrcpyMode = computed(() => platform.value === 'android' && screenMode.value === 'pointer')
 const mjpegMode = computed(() => platform.value === 'ios' && screenMode.value === 'pointer')
@@ -112,6 +130,7 @@ const {
   canvasRef: drawingCanvas,
   addRect,
   addTrack,
+  addCropRect,
   clearShapes,
   clearShapesByType,
   resizeCanvas,
@@ -411,12 +430,25 @@ function handleMouseMove(e: MouseEvent) {
   // 清除之前的悬停高亮
   clearShapesByType('hover')
 
-  if (screenMode.value === 'default') {
-    // 查看模式：悬停高亮 UI 元素
+  if (screenMode.value === 'default' || screenMode.value === 'assert-element') {
+    // 查看模式 / 元素选择模式：悬停高亮 UI 元素
     const hoveredNode = findNodeAtPosition(deviceCoords.x, deviceCoords.y)
     if (hoveredNode && hoveredNode.bounds) {
       addRect(hoveredNode.bounds, 'hover')
     }
+  } else if (screenMode.value === 'assert-screenshot' && isDrawing.value) {
+    // 截图框选模式：动态绘制选区矩形
+    cropEndPoint.value = canvasCoords
+
+    // 清除之前的选区，绘制新的
+    clearShapesByType('crop')
+
+    const x = Math.min(cropStartPoint.value!.x, cropEndPoint.value.x)
+    const y = Math.min(cropStartPoint.value!.y, cropEndPoint.value.y)
+    const width = Math.abs(cropEndPoint.value.x - cropStartPoint.value!.x)
+    const height = Math.abs(cropEndPoint.value.y - cropStartPoint.value!.y)
+
+    addCropRect(x, y, width, height)
   } else if (screenMode.value === 'pointer') {
     // 指针模式：记录轨迹点（所有模式都记录，用于判断tap/swipe）
     if (isDrawing.value) {
@@ -438,17 +470,19 @@ function handleMouseMove(e: MouseEvent) {
 // 鼠标按下
 function handleMouseDown(e: MouseEvent) {
   const deviceCoords = getDeviceCoords(e)
-  if (!deviceCoords) return
+  const canvasCoords = getCanvasCoords(e)
+  if (!deviceCoords || !canvasCoords) return
 
   isDrawing.value = true
   trackPoints.value = []
 
-  if (screenMode.value === 'pointer') {
+  if (screenMode.value === 'assert-screenshot') {
+    // 截图框选模式：记录起点
+    cropStartPoint.value = canvasCoords
+    cropEndPoint.value = canvasCoords
+  } else if (screenMode.value === 'pointer') {
     // 指针模式：记录第一个轨迹点（所有模式都记录）
-    const canvasCoords = getCanvasCoords(e)
-    if (canvasCoords) {
-      trackPoints.value.push(canvasCoords)
-    }
+    trackPoints.value.push(canvasCoords)
 
     // scrcpy模式：发送触摸按下事件
     if (scrcpyMode.value) {
@@ -483,6 +517,57 @@ function getSwipeParams(): { startX: number; startY: number; endX: number; endY:
   }
 }
 
+/**
+ * 裁剪当前屏幕截图的指定区域
+ * @param start Canvas 起点坐标
+ * @param end Canvas 终点坐标
+ * @returns Base64 编码的裁剪图片（data:image/png;base64,...）
+ */
+async function cropScreenshot(start: Point, end: Point): Promise<string> {
+  // 计算裁剪区域（Canvas 坐标系）
+  const x = Math.min(start.x, end.x)
+  const y = Math.min(start.y, end.y)
+  const width = Math.abs(end.x - start.x)
+  const height = Math.abs(end.y - start.y)
+
+  // 获取当前截图源（img 或 canvas）
+  const sourceElement = getActiveMediaElement()
+  if (!sourceElement) {
+    throw new Error('无法获取屏幕截图源')
+  }
+
+  // 创建临时 Canvas 进行裁剪
+  const tempCanvas = document.createElement('canvas')
+  tempCanvas.width = width
+  tempCanvas.height = height
+  const tempCtx = tempCanvas.getContext('2d')
+  if (!tempCtx) {
+    throw new Error('无法创建 Canvas 上下文')
+  }
+
+  // 绘制裁剪区域
+  if (sourceElement instanceof HTMLImageElement) {
+    // 从 <img> 裁剪
+    const scaleX = sourceElement.naturalWidth / drawingCanvas.value!.width
+    const scaleY = sourceElement.naturalHeight / drawingCanvas.value!.height
+    tempCtx.drawImage(
+      sourceElement,
+      x * scaleX, y * scaleY, width * scaleX, height * scaleY, // 源区域
+      0, 0, width, height // 目标区域
+    )
+  } else if (sourceElement instanceof HTMLCanvasElement) {
+    // 从 Canvas 裁剪（MJPEG 模式）
+    tempCtx.drawImage(
+      sourceElement,
+      x, y, width, height, // 源区域
+      0, 0, width, height  // 目标区域
+    )
+  }
+
+  // 转换为 Base64
+  return tempCanvas.toDataURL('image/png')
+}
+
 // 鼠标抬起
 async function handleMouseUp(e: MouseEvent) {
   const deviceCoords = getDeviceCoords(e)
@@ -499,6 +584,29 @@ async function handleMouseUp(e: MouseEvent) {
       if (selectedNode.bounds) {
         addRect(selectedNode.bounds, 'select')
       }
+    }
+  } else if (screenMode.value === 'assert-element') {
+    // 元素选择模式：点击后提取 XPath 和属性
+    const selectedNode = findNodeAtPosition(deviceCoords.x, deviceCoords.y)
+    if (selectedNode) {
+      emit('element-selected', selectedNode)
+      // 清除高亮
+      clearShapesByType('hover')
+    }
+  } else if (screenMode.value === 'assert-screenshot') {
+    // 截图框选模式：裁剪图片并返回 Base64
+    if (cropStartPoint.value && cropEndPoint.value) {
+      try {
+        const croppedBase64 = await cropScreenshot(cropStartPoint.value, cropEndPoint.value)
+        emit('screenshot-cropped', croppedBase64)
+      } catch (error) {
+        message.error(`截图裁剪失败: ${error instanceof Error ? error.message : String(error)}`)
+      }
+
+      // 清理框选状态
+      clearShapesByType('crop')
+      cropStartPoint.value = null
+      cropEndPoint.value = null
     }
   } else if (screenMode.value === 'pointer') {
     // 指针模式：发送触摸抬起事件
