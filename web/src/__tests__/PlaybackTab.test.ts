@@ -8,7 +8,7 @@ import type { RecordingMetadata } from '@/api/recording'
 
 describe('PlaybackTab.vue', () => {
   let player: ReturnType<typeof createMockPlayer>
-  
+
   const mockRecordings: RecordingMetadata[] = [
     {
       group: 'default',
@@ -21,15 +21,14 @@ describe('PlaybackTab.vue', () => {
 
   beforeEach(() => {
     player = createMockPlayer()
-    // Setup initial recording state
+    // Setup initial recording state with new unified failure control
     player.recording.value.config = {
       captureScreenshots: true,
       screenshotQuality: 0.8,
       recordElementDetails: true,
       globalFailureControl: {
         enabled: false,
-        onExecuteFailure: 'stop',
-        onAssertFailure: 'stop'
+        onFailure: 'stop' // 使用新的统一字段
       }
     } as any
   })
@@ -79,23 +78,29 @@ describe('PlaybackTab.vue', () => {
       }
     })
 
-    const switchComp = wrapper.findComponent(NSwitch)
-    
+    const switchComponents = wrapper.findAllComponents(NSwitch)
+    // 应该有 1 个全局开关
+    expect(switchComponents.length).toBeGreaterThanOrEqual(1)
+
+    // 找到全局失败控制开关（第一个 NSwitch）
+    const globalControlSwitch = switchComponents[0]
+
     // Simulate updating the value directly as we can't easily trigger the complex event chain in shallowMount
-    await switchComp.vm.$emit('update:value', true)
-    
+    await globalControlSwitch.vm.$emit('update:value', true)
+
     expect(player.recording.value.config.globalFailureControl!.enabled).toBe(true)
-    
-    // Re-render to show options
+
+    // Re-render to show behavior switch
     await wrapper.vm.$nextTick()
-    
-    expect(wrapper.findAllComponents(NSelect).length).toBe(2) // Execute and Assert selectors
+
+    // 现在应该有 2 个开关：全局开关 + 失败行为开关
+    expect(wrapper.findAllComponents(NSwitch).length).toBe(2)
   })
 
   it('updates failure behavior when select changes', async () => {
     // Enable global control first
     player.recording.value.config.globalFailureControl!.enabled = true
-    
+
     const wrapper = shallowMount(PlaybackTab, {
       props: {
         player,
@@ -111,16 +116,17 @@ describe('PlaybackTab.vue', () => {
       }
     })
 
-    const selects = wrapper.findAllComponents(NSelect)
-    expect(selects.length).toBe(2)
-    
-    // Update Execute Failure behavior
-    await selects[0].vm.$emit('update:value', 'continue')
-    expect(player.recording.value.config.globalFailureControl!.onExecuteFailure).toBe('continue')
+    const switches = wrapper.findAllComponents(NSwitch)
+    expect(switches.length).toBe(2) // 全局开关 + 失败行为开关
 
-    // Update Assert Failure behavior
-    await selects[1].vm.$emit('update:value', 'continue')
-    expect(player.recording.value.config.globalFailureControl!.onAssertFailure).toBe('continue')
+    // 第二个开关是失败行为开关（globalStopOnFailure）
+    // 设置为 false 表示 continue
+    await switches[1].vm.$emit('update:value', false)
+    expect(player.recording.value.config.globalFailureControl!.onFailure).toBe('continue')
+
+    // 设置为 true 表示 stop
+    await switches[1].vm.$emit('update:value', true)
+    expect(player.recording.value.config.globalFailureControl!.onFailure).toBe('stop')
   })
 
   it('renders recording tree nodes correctly (coverage)', async () => {
@@ -135,18 +141,18 @@ describe('PlaybackTab.vue', () => {
       },
       global: {
         components: { NSwitch, NSelect, NTree },
-        stubs: { 
-          NIcon: true, 
+        stubs: {
+          NIcon: true,
           // Provide a simple stub to ensure it exists and we can get props
           NTree: {
             template: '<div><slot /></div>',
-            props: ['renderLabel', 'renderSuffix', 'nodeProps'] 
+            props: ['renderLabel', 'renderSuffix', 'nodeProps']
           },
-          NEmpty: true, 
-          NAlert: true, 
-          NButton: true, 
-          NTag: true, 
-          NSpace: true 
+          NEmpty: true,
+          NAlert: true,
+          NButton: true,
+          NTag: true,
+          NSpace: true
         }
       }
     })
@@ -170,10 +176,10 @@ describe('PlaybackTab.vue', () => {
     expect(groupVNode).toBeDefined()
 
     // Test renderLabel for Recording
-    const recordingOption = { 
-      isGroup: false, 
-      label: 'test-rec', 
-      recording: mockRecordings[0] 
+    const recordingOption = {
+      isGroup: false,
+      label: 'test-rec',
+      recording: mockRecordings[0]
     }
     const recVNode = renderLabel({ option: recordingOption })
     expect(recVNode).toBeDefined()
@@ -196,36 +202,34 @@ describe('PlaybackTab.vue', () => {
   })
 
   it('renders step classes correctly during playback', async () => {
-    // Setup player state
+    // Setup player state with new unified onFailure field
     player.recording.value.actions = [
-      { 
-        id: 'step-1', 
-        type: 'tap', 
-        timestamp: 0, 
-        relativeTime: 0, 
-        waitAfter: 0, 
-        onExecuteFailure: 'stop', 
-        onAssertFailure: 'stop', 
+      {
+        id: 'step-1',
+        type: 'tap',
+        timestamp: 0,
+        relativeTime: 0,
+        waitAfter: 0,
+        onFailure: 'stop', // 使用新的统一字段
         coords: { x: 0, y: 0, scaleX: 1, scaleY: 1 },
-        params: { x: 0, y: 0 } 
+        params: { x: 0, y: 0 }
       } as any,
-      { 
-        id: 'step-2', 
-        type: 'assert', 
-        timestamp: 0, 
-        relativeTime: 0, 
-        waitAfter: 0, 
-        onExecuteFailure: 'stop', 
-        onAssertFailure: 'stop', 
-        params: { description: 'test' } 
+      {
+        id: 'step-2',
+        type: 'assert',
+        timestamp: 0,
+        relativeTime: 0,
+        waitAfter: 0,
+        onFailure: 'stop', // 使用新的统一字段
+        params: { description: 'test' }
       } as any
     ]
-    
+
     // Mock step results using reactive map to trigger updates
     const results = reactive(new Map())
     results.set('step-1', { status: 'success' })
     results.set('step-2', { status: 'running' })
-    
+
     player.getStepResult = (id: string) => results.get(id)
     player.isPlaying.value = true
     player.currentIndex.value = 1
@@ -241,16 +245,16 @@ describe('PlaybackTab.vue', () => {
       },
       global: {
         components: { NSwitch, NSelect, NTree },
-        stubs: { 
-          NIcon: true, 
-          NTree: true, 
-          NEmpty: true, 
-          NAlert: true, 
-          NButton: true, 
+        stubs: {
+          NIcon: true,
+          NTree: true,
+          NEmpty: true,
+          NAlert: true,
+          NButton: true,
           NTag: {
             template: '<div class="n-tag"><slot /></div>'
           },
-          NSpace: true 
+          NSpace: true
         }
       }
     })
@@ -258,30 +262,30 @@ describe('PlaybackTab.vue', () => {
     // Find step items
     const steps = wrapper.findAll('.step-item')
     expect(steps.length).toBe(2)
-    
+
     // Check classes
     expect(steps[0].classes()).toContain('success')
     expect(steps[1].classes()).toContain('running')
     expect(steps[1].classes()).toContain('active')
-    
+
     // Check assert tag
     const assertTag = wrapper.find('.assert-result-tag')
     expect(assertTag.exists()).toBe(false) // step-2 is running, so no result tag yet
-    
+
     // Update step-2 to failed
     results.set('step-2', { status: 'failed' })
     await wrapper.vm.$nextTick()
     expect(steps[1].classes()).toContain('failed')
-    
+
     // Check assert tag for failed
     // Need to re-find because DOM updates
     // Actually the v-if="getAssertResultTag(action)" should now be true
     // Wait, getAssertResultTag logic: if status is pending or running return null.
     // Now it is failed, so it should return object.
-    
+
     // Force update might be needed if reactivity is tricky with mocked map getter
-    await wrapper.setProps({ player: { ...player } }) 
-    
+    await wrapper.setProps({ player: { ...player } })
+
     // Find the tag specifically by class
     const assertTagFailed = wrapper.findComponent('.assert-result-tag')
     expect(assertTagFailed.exists()).toBe(true)

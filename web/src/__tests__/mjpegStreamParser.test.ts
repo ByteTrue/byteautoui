@@ -14,8 +14,19 @@ function createStream(chunks: Uint8Array[]) {
 }
 
 async function blobToString(blob: Blob) {
-  const buffer = await blob.arrayBuffer()
-  return decoder.decode(buffer)
+  // JSDOM 环境下 Blob.arrayBuffer() 可能不存在，使用兼容方案
+  if (typeof blob.arrayBuffer === 'function') {
+    const buffer = await blob.arrayBuffer()
+    return decoder.decode(buffer)
+  } else {
+    // Fallback: 通过 FileReader (JSDOM 支持)
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(blob)
+    })
+  }
 }
 
 function buildMultipart(boundary: string, frames: Uint8Array[]) {

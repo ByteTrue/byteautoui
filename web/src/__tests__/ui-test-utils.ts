@@ -3,30 +3,20 @@ import { vi } from 'vitest'
 import type { RecordedAction, RecordingConfig, StepResult } from '@/types/recording'
 
 // Mock useRecorder
+// Mock useRecorder
 export function createMockRecorder() {
   const isRecording = ref(false)
   const isPaused = ref(false)
   const duration = ref(0)
   const actions = ref<RecordedAction[]>([])
   const actionCount = computed(() => actions.value.length)
-  const recordingConfig = ref<RecordingConfig>({
-    captureScreenshots: true,
-    screenshotQuality: 0.8,
-    recordElementDetails: true,
-    globalFailureControl: {
-      enabled: false,
-      onExecuteFailure: 'stop',
-      onAssertFailure: 'stop'
-    }
-  })
 
   return {
     isRecording,
     isPaused,
     duration,
     actions,
-    actionCount,
-    recordingConfig
+    actionCount
   }
 }
 
@@ -43,7 +33,7 @@ export function createMockPlayer() {
     elapsedTime: 0,
     state: 'idle'
   })
-  
+
   const recording = ref({
     config: {
       globalFailureControl: {
@@ -54,12 +44,13 @@ export function createMockPlayer() {
     },
     actions: [] as RecordedAction[]
   })
-  
+
   const stepResults = new Map<string, StepResult>()
   const getStepResult = (id: string) => stepResults.get(id)
 
   const canPlay = computed(() => recording.value && recording.value.actions.length > 0)
   const recordingValue = computed(() => recording.value)
+  const globalFailureControl = computed(() => recording.value?.config.globalFailureControl)
 
   return {
     isPlaying,
@@ -69,6 +60,7 @@ export function createMockPlayer() {
     currentIndex,
     progress,
     recording: recordingValue,
+    globalFailureControl,
     getStepResult,
     canPlay,
     pause: vi.fn(),
