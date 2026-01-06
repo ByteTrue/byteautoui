@@ -94,26 +94,23 @@ class IOSTunnelManager:
                 "--userspace"
             ]
 
-            # 临时使用 PIPE 捕获启动错误
+            # 使用 DEVNULL 避免 SIGPIPE（进程写日志时不会因管道关闭而死亡）
             process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
-            time.sleep(0.2)
+            time.sleep(0.3)
 
             if process.poll() is not None:
-                # 进程已退出，读取错误
-                _, stderr = process.communicate()
-                raise RuntimeError(f"Tunnel failed to start: {stderr}")
-
-            # 启动成功后，关闭 PIPE 避免缓冲区满阻塞
-            if process.stdout:
-                process.stdout.close()
-            if process.stderr:
-                process.stderr.close()
+                raise RuntimeError(
+                    f"Tunnel failed to start (exit code: {process.returncode})\n"
+                    f"请检查:\n"
+                    f"1. go-ios 是否已正确安装\n"
+                    f"2. 设备 {udid[:8]}... 是否已连接并信任\n"
+                    f"3. 运行 'ios tunnel start --udid={udid} --userspace' 查看详细错误"
+                )
 
             self._tunnel_processes[udid] = process
             self._device_ref_counts[udid] = 1

@@ -187,37 +187,23 @@ class GoIOSWDAServer:
             f"--udid={self.device_udid}"
         ]
 
-        # 临时使用 PIPE 捕获启动错误
+        # 使用 DEVNULL 避免 SIGPIPE（进程写日志时不会因管道关闭而死亡）
         self._wda_process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
-        time.sleep(0.2)
+        time.sleep(0.3)
 
         if self._wda_process.poll() is not None:
-            # 进程已退出，读取错误
-            stdout, stderr = self._wda_process.communicate()
-            error_msg = stderr or stdout
-            if "Did not find test app" in error_msg:
-                raise RuntimeError(
-                    f"WDA未安装或bundle ID错误\n\n"
-                    f"请检查:\n"
-                    f"1. WDA是否已安装到设备 (bundle ID: {self.wda_bundle_id})\n"
-                    f"2. bundle ID是否正确\n\n"
-                    f"设置正确的bundle ID:\n"
-                    f"  前端配置对话框中输入正确的bundle ID\n\n"
-                    f"原始错误: {error_msg}"
-                )
-            raise RuntimeError(f"WDA failed to start: {error_msg}")
-
-        # 启动成功后，关闭 PIPE 避免缓冲区满阻塞（WDA 是长期运行进程）
-        if self._wda_process.stdout:
-            self._wda_process.stdout.close()
-        if self._wda_process.stderr:
-            self._wda_process.stderr.close()
+            raise RuntimeError(
+                f"WDA failed to start (exit code: {self._wda_process.returncode})\n"
+                f"请检查:\n"
+                f"1. WDA是否已安装到设备 (bundle ID: {self.wda_bundle_id})\n"
+                f"2. bundle ID是否正确\n"
+                f"3. 运行 'ios runwda --bundleid={self.wda_bundle_id} --udid={self.device_udid}' 查看详细错误"
+            )
 
         logger.info("WDA process started")
 
@@ -235,25 +221,17 @@ class GoIOSWDAServer:
             f"--udid={self.device_udid}"
         ]
 
-        # 临时使用 PIPE 捕获启动错误
+        # 使用 DEVNULL 避免 SIGPIPE
         self._forward_process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
-        time.sleep(0.2)
+        time.sleep(0.3)
 
         if self._forward_process.poll() is not None:
-            _, stderr = self._forward_process.communicate()
-            raise RuntimeError(f"Port forward failed: {stderr}")
-
-        # 启动成功后，关闭 PIPE 避免缓冲区满阻塞
-        if self._forward_process.stdout:
-            self._forward_process.stdout.close()
-        if self._forward_process.stderr:
-            self._forward_process.stderr.close()
+            raise RuntimeError(f"Port forward failed (exit code: {self._forward_process.returncode})")
 
         logger.info("Port forward established")
 
@@ -271,28 +249,20 @@ class GoIOSWDAServer:
             f"--udid={self.device_udid}"
         ]
 
-        # 临时使用 PIPE 捕获启动错误
+        # 使用 DEVNULL 避免 SIGPIPE
         self._mjpeg_forward_process = subprocess.Popen(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
-        time.sleep(0.2)
+        time.sleep(0.3)
 
         if self._mjpeg_forward_process.poll() is not None:
-            _, stderr = self._mjpeg_forward_process.communicate()
             # MJPEG 端口转发失败不是致命错误，只记录警告
-            logger.warning(f"MJPEG port forward failed (will fallback to WDA HTTP): {stderr}")
+            logger.warning(f"MJPEG port forward failed (exit code: {self._mjpeg_forward_process.returncode})")
             self._mjpeg_forward_process = None
             return
-
-        # 启动成功后，关闭 PIPE 避免缓冲区满阻塞
-        if self._mjpeg_forward_process.stdout:
-            self._mjpeg_forward_process.stdout.close()
-        if self._mjpeg_forward_process.stderr:
-            self._mjpeg_forward_process.stderr.close()
 
         logger.info("MJPEG port forward established")
 
@@ -354,13 +324,11 @@ class GoIOSWDAServer:
         while time.time() - start < timeout:
             # 检查进程是否还在运行
             if self._forward_process and self._forward_process.poll() is not None:
-                _, stderr = self._forward_process.communicate()
-                logger.error(f"Port forward process died: {stderr}")
+                logger.error(f"Port forward process died (exit code: {self._forward_process.returncode})")
                 return False
 
             if self._wda_process and self._wda_process.poll() is not None:
-                stdout, stderr = self._wda_process.communicate()
-                logger.error(f"WDA process died: {stderr or stdout}")
+                logger.error(f"WDA process died (exit code: {self._wda_process.returncode})")
                 return False
 
             if self._is_wda_running():
