@@ -92,6 +92,22 @@
               {{ action.type }}
             </n-tag>
             <span class="step-details">{{ formatActionParams(action) }}</span>
+            <!-- 失败策略徽章 -->
+            <n-tooltip v-if="getFailureConfigInfo(action)" trigger="hover">
+              <template #trigger>
+                <div 
+                  class="failure-badge" 
+                  :class="[
+                    getFailureConfigInfo(action)!.behavior, 
+                    { global: getFailureConfigInfo(action)!.isGlobal }
+                  ]"
+                >
+                  <n-icon :component="getFailureConfigInfo(action)!.icon" />
+                </div>
+              </template>
+              {{ getFailureConfigInfo(action)!.tooltip }}
+            </n-tooltip>
+
             <!-- 断言结果标签 -->
             <n-tag
               v-if="getAssertResultTag(action)"
@@ -120,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { NButton, NSpace, NTag, NIcon, NButtonGroup, NEmpty, NDropdown } from 'naive-ui'
+import { NButton, NSpace, NTag, NIcon, NButtonGroup, NEmpty, NDropdown, NTooltip } from 'naive-ui'
 import {
   RadioButtonOnOutline,
   StopCircleOutline,
@@ -129,9 +145,11 @@ import {
   TrashOutline,
   CheckmarkDoneOutline,
   ReorderThreeOutline,
+  WarningOutline,
+  CloseCircleOutline,
 } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
-import type { RecordedAction, StepResult } from '@/types/recording'
+import type { RecordedAction, StepResult, FailureBehavior } from '@/types/recording'
 import {
   formatDuration,
   formatWaitAfter,
@@ -201,6 +219,33 @@ function getAssertResultTag(action: RecordedAction): { show: boolean; text: stri
     show: true,
     text: result.status === 'success' ? 'PASS' : 'FAIL',
     type: result.status === 'success' ? 'success' : 'error',
+  }
+}
+
+// 获取失败配置信息
+function getFailureConfigInfo(action: RecordedAction) {
+  // 检查是否被全局覆盖
+  const globalConfig = props.recorder.recordingConfig.value?.globalFailureControl
+  const isGlobalEnabled = globalConfig?.enabled
+  
+  const behavior = isGlobalEnabled 
+    ? (action.type === 'assert' ? globalConfig.onAssertFailure : globalConfig.onExecuteFailure)
+    : (action.type === 'assert' ? action.onAssertFailure : action.onExecuteFailure)
+    
+  // 默认为 stop
+  const finalBehavior = behavior || 'stop'
+  
+  // 只有非默认行为(continue)才显示，或者是全局启用时显示
+  if (finalBehavior === 'stop' && !isGlobalEnabled) return null
+  
+  return {
+    behavior: finalBehavior,
+    isGlobal: isGlobalEnabled,
+    icon: finalBehavior === 'continue' ? WarningOutline : CloseCircleOutline,
+    color: finalBehavior === 'continue' ? 'warning' : 'error',
+    tooltip: isGlobalEnabled 
+      ? props.t.failureControl.globalSwitch 
+      : (finalBehavior === 'continue' ? props.t.failureControl.behaviors.continue : props.t.failureControl.behaviors.stop)
   }
 }
 </script>
@@ -361,5 +406,30 @@ function getAssertResultTag(action: RecordedAction): { show: boolean; text: stri
   opacity: 0.5;
   background: var(--n-color-primary-hover);
   border-left-color: var(--n-color-primary);
+}
+
+.failure-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.failure-badge.continue {
+  color: var(--n-color-warning);
+  background: rgba(255, 193, 7, 0.1);
+}
+
+.failure-badge.stop {
+  color: var(--n-color-error);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.failure-badge.global {
+  border: 1px dashed currentColor;
 }
 </style>

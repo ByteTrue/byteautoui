@@ -85,6 +85,39 @@
       <div v-if="player.error.value" class="error-message-compact">
         <n-alert type="error" :title="player.error.value" closable />
       </div>
+
+      <!-- 全局失败控制栏 -->
+      <div v-if="player.recording.value" class="failure-control-bar">
+        <div class="control-header">
+          <n-icon size="16"><SettingsOutline /></n-icon>
+          <span class="label">{{ t.failureControl.title }}</span>
+          <n-switch v-model:value="isGlobalControlEnabled" size="small">
+            <template #checked>{{ t.failureControl.globalSwitch }}</template>
+            <template #unchecked>{{ t.failureControl.globalSwitch }}</template>
+          </n-switch>
+        </div>
+        
+        <div v-if="isGlobalControlEnabled" class="control-options">
+          <div class="option-item">
+            <span class="option-label">{{ t.failureControl.onExecute }}:</span>
+            <n-select 
+              v-model:value="globalOnExecuteFailure" 
+              :options="failureBehaviorOptions" 
+              size="tiny" 
+              class="behavior-select"
+            />
+          </div>
+          <div class="option-item">
+            <span class="option-label">{{ t.failureControl.onAssert }}:</span>
+            <n-select 
+              v-model:value="globalOnAssertFailure" 
+              :options="failureBehaviorOptions" 
+              size="tiny" 
+              class="behavior-select"
+            />
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 下部：步骤预览列表（可滚动） -->
@@ -128,6 +161,9 @@ import {
   NTree,
   NEmpty,
   NAlert,
+  NSwitch,
+  NSelect,
+  NDivider,
   type TreeOption,
 } from 'naive-ui'
 import {
@@ -139,9 +175,10 @@ import {
   PlayCircleOutline,
   TrashOutline,
   CreateOutline,
+  SettingsOutline,
 } from '@vicons/ionicons5'
 import type { RecordingMetadata } from '@/api/recording'
-import type { RecordedAction, StepResult } from '@/types/recording'
+import type { RecordedAction, StepResult, FailureBehavior } from '@/types/recording'
 import {
   formatFileSize,
   formatDate,
@@ -178,6 +215,49 @@ const emit = defineEmits<{
   'edit-recording': [group: string, name: string]
   'delete-recording': [group: string, name: string]
 }>()
+
+// 失败行为选项
+const failureBehaviorOptions = computed(() => [
+  { label: props.t.failureControl.continue, value: 'continue' },
+  { label: props.t.failureControl.stop, value: 'stop' },
+])
+
+// 全局控制开关
+const isGlobalControlEnabled = computed({
+  get: () => props.player.recording.value?.config.globalFailureControl?.enabled ?? false,
+  set: (val: boolean) => {
+    if (!props.player.recording.value) return
+    if (!props.player.recording.value.config.globalFailureControl) {
+      props.player.recording.value.config.globalFailureControl = {
+        enabled: val,
+        onExecuteFailure: 'stop',
+        onAssertFailure: 'stop',
+      }
+    } else {
+      props.player.recording.value.config.globalFailureControl.enabled = val
+    }
+  },
+})
+
+// 执行失败行为
+const globalOnExecuteFailure = computed({
+  get: () => props.player.recording.value?.config.globalFailureControl?.onExecuteFailure ?? 'stop',
+  set: (val: FailureBehavior) => {
+    if (props.player.recording.value?.config.globalFailureControl) {
+      props.player.recording.value.config.globalFailureControl.onExecuteFailure = val
+    }
+  },
+})
+
+// 断言失败行为
+const globalOnAssertFailure = computed({
+  get: () => props.player.recording.value?.config.globalFailureControl?.onAssertFailure ?? 'stop',
+  set: (val: FailureBehavior) => {
+    if (props.player.recording.value?.config.globalFailureControl) {
+      props.player.recording.value.config.globalFailureControl.onAssertFailure = val
+    }
+  },
+})
 
 // 树形录制列表数据结构
 const recordingsTree = computed<RecordingTreeNode[]>(() => {
@@ -391,6 +471,53 @@ function getAssertResultTag(action: RecordedAction): { text: string; type: 'succ
 
 .error-message-compact {
   margin-bottom: 8px;
+}
+
+.failure-control-bar {
+  background: var(--n-color-embedded);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--n-border-color);
+}
+
+.control-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--n-text-color-2);
+}
+
+.control-header .label {
+  flex: 1;
+  font-weight: 500;
+}
+
+.control-options {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--n-divider-color);
+  display: flex;
+  gap: 16px;
+}
+
+.option-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.option-label {
+  color: var(--n-text-color-3);
+  white-space: nowrap;
+}
+
+.behavior-select {
+  flex: 1;
+  min-width: 100px;
 }
 
 .playback-steps-section {

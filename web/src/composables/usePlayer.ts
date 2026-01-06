@@ -4,12 +4,42 @@ import { tap, sendCommand, getHierarchy, assertCombined, type AssertCombinedRequ
 import type {
   RecordingFile,
   RecordedAction,
+  FailureBehavior,
   PlaybackState,
   PlaybackProgress,
   AssertParams,
   StepResult,
-  StepResultStatus,
 } from '@/types/recording'
+
+const DEFAULT_FAILURE_BEHAVIOR: FailureBehavior = 'stop'
+
+function normalizeFailureBehavior(value: unknown): FailureBehavior {
+  return value === 'continue' || value === 'stop' ? value : DEFAULT_FAILURE_BEHAVIOR
+}
+
+const DEFAULT_GLOBAL_FAILURE_CONTROL = {
+  enabled: false,
+  onExecuteFailure: DEFAULT_FAILURE_BEHAVIOR,
+  onAssertFailure: DEFAULT_FAILURE_BEHAVIOR,
+} as const satisfies {
+  enabled: boolean
+  onExecuteFailure: FailureBehavior
+  onAssertFailure: FailureBehavior
+}
+
+type FailureKind = 'execute' | 'assert'
+
+class AssertFailureError extends Error {
+  public readonly details?: unknown
+  public readonly screenshot?: string
+
+  constructor(message: string, details?: unknown, screenshot?: string) {
+    super(message)
+    this.name = 'AssertFailureError'
+    this.details = details
+    this.screenshot = screenshot
+  }
+}
 
 /**
  * 回放引擎
@@ -43,6 +73,8 @@ export function usePlayer(
   const isPaused = computed(() => state.value === 'paused')
   const canPlay = computed(() => recording.value !== null && recording.value.actions.length > 0)
 
+  const globalFailureControl = computed(() => recording.value?.config.globalFailureControl)
+
   /**
    * 获取步骤执行结果
    */
@@ -64,11 +96,70 @@ export function usePlayer(
     stepResults.value.clear()
   }
 
+  function getOrInitGlobalFailureControl() {
+    if (!recording.value) return { ...DEFAULT_GLOBAL_FAILURE_CONTROL }
+
+    const existing = recording.value.config.globalFailureControl
+    if (!existing) {
+      const next = { ...DEFAULT_GLOBAL_FAILURE_CONTROL }
+      recording.value.config.globalFailureControl = next
+      return next
+    }
+
+    // 规范化，避免脏数据把回放逻辑搞崩
+    existing.enabled = Boolean(existing.enabled)
+    existing.onExecuteFailure = normalizeFailureBehavior(existing.onExecuteFailure)
+    existing.onAssertFailure = normalizeFailureBehavior(existing.onAssertFailure)
+    return existing
+  }
+
+  function getEffectiveFailureBehavior(action: RecordedAction, kind: FailureKind): FailureBehavior {
+    const global = getOrInitGlobalFailureControl()
+    if (global.enabled) {
+      return kind === 'execute' ? global.onExecuteFailure : global.onAssertFailure
+    }
+    return kind === 'execute'
+      ? normalizeFailureBehavior(action.onExecuteFailure)
+      : normalizeFailureBehavior(action.onAssertFailure)
+  }
+
+  function updateGlobalFailureControl(
+    updates: Partial<{ enabled: boolean; onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }>
+  ) {
+    const current = getOrInitGlobalFailureControl()
+    current.enabled = updates.enabled ?? current.enabled
+    current.onExecuteFailure = updates.onExecuteFailure ?? current.onExecuteFailure
+    current.onAssertFailure = updates.onAssertFailure ?? current.onAssertFailure
+  }
+
+  function normalizeRecordingForPlayback(file: RecordingFile): RecordingFile {
+    // 补齐全局配置，避免到处写 if (?.)
+    if (!file.config.globalFailureControl) {
+      file.config.globalFailureControl = { ...DEFAULT_GLOBAL_FAILURE_CONTROL }
+    } else {
+      file.config.globalFailureControl.enabled = Boolean(file.config.globalFailureControl.enabled)
+      file.config.globalFailureControl.onExecuteFailure = normalizeFailureBehavior(
+        file.config.globalFailureControl.onExecuteFailure
+      )
+      file.config.globalFailureControl.onAssertFailure = normalizeFailureBehavior(
+        file.config.globalFailureControl.onAssertFailure
+      )
+    }
+
+    // 补齐步骤级字段（向后兼容：老录制文件可能缺字段）
+    for (const action of file.actions) {
+      ;(action as any).onExecuteFailure = normalizeFailureBehavior((action as any).onExecuteFailure)
+      ;(action as any).onAssertFailure = normalizeFailureBehavior((action as any).onAssertFailure)
+    }
+
+    return file
+  }
+
   /**
    * 加载录制文件
    */
   function load(file: RecordingFile) {
-    recording.value = file
+    recording.value = normalizeRecordingForPlayback(file)
     currentIndex.value = -1
     state.value = 'idle'
     error.value = null
@@ -260,17 +351,10 @@ export function usePlayer(
         // 调用断言 API
         const result = await assertCombined(platform, serial, request)
 
-        // 如果断言失败，抛出错误停止回放
+        // 如果断言失败，交由上层决定 continue/stop
         if (!result.success) {
           const errorMsg = `断言失败: ${result.message}`
-          console.error(errorMsg, result.details)
-
-          // 可选: 显示失败截图
-          if (result.screenshot) {
-            console.log('失败截图:', `data:image/jpeg;base64,${result.screenshot}`)
-          }
-
-          throw new Error(errorMsg)
+          throw new AssertFailureError(errorMsg, result.details, result.screenshot)
         }
 
         break
@@ -293,6 +377,19 @@ export function usePlayer(
     // 如果是暂停状态,继续播放
     if (state.value === 'paused') {
       state.value = 'playing'
+
+      // 如果暂停发生在“步骤已完成”之后，避免恢复时重复执行同一步
+      if (
+        currentIndex.value >= 0 &&
+        currentIndex.value < recording.value.actions.length &&
+        (() => {
+          const action = recording.value!.actions[currentIndex.value]!
+          const result = stepResults.value.get(action.id)
+          return result && result.status !== 'running'
+        })()
+      ) {
+        currentIndex.value++
+      }
     } else {
       // 重新开始
       currentIndex.value = 0
@@ -321,35 +418,43 @@ export function usePlayer(
         // 标记步骤成功
         const duration = Date.now() - startTime
         setStepResult(action.id, { status: 'success', duration })
-
-        // 再次检查状态（executeAction可能很耗时）
-        if (state.value !== 'playing') {
-          break
-        }
-
-        // 使用当前操作的 waitAfter 作为下一步前的等待时间
-        if (action.waitAfter > 0) {
-          await sleep(action.waitAfter)
-
-          // 再次检查状态（sleep后可能被暂停）
-          if (state.value !== 'playing') {
-            break
-          }
-        }
-
-        currentIndex.value++
       } catch (err) {
-        // 标记步骤失败
+        const failureKind: FailureKind = err instanceof AssertFailureError ? 'assert' : 'execute'
         const duration = Date.now() - startTime
         const errorMsg = err instanceof Error ? err.message : String(err)
         setStepResult(action.id, { status: 'failed', error: errorMsg, duration })
 
-        // 保守策略:出错即停
-        error.value = errorMsg
-        state.value = 'error'
-        console.error(`回放失败在步骤 ${currentIndex.value}:`, err)
+        const behavior = getEffectiveFailureBehavior(action, failureKind)
+
+        if (behavior === 'stop') {
+          error.value = errorMsg
+          state.value = 'error'
+          console.error(`回放失败在步骤 ${currentIndex.value}:`, err)
+          if (err instanceof AssertFailureError && err.screenshot) {
+            console.log('失败截图:', `data:image/jpeg;base64,${err.screenshot}`)
+          }
+          break
+        }
+
+        console.warn(`步骤失败但继续回放(步骤 ${currentIndex.value}, ${failureKind} failure):`, err)
+      }
+
+      // 再次检查状态（executeAction可能很耗时）
+      if (state.value !== 'playing') {
         break
       }
+
+      // 使用当前操作的 waitAfter 作为下一步前的等待时间（失败 continue 也遵循同一规则）
+      if (action.waitAfter > 0) {
+        await sleep(action.waitAfter)
+
+        // 再次检查状态（sleep后可能被暂停）
+        if (state.value !== 'playing') {
+          break
+        }
+      }
+
+      currentIndex.value++
     }
 
     // 回放完成
@@ -441,5 +546,9 @@ export function usePlayer(
     // 步骤结果追踪
     stepResults,
     getStepResult,
+
+    // 全局失败控制（用于 UI 绑定）
+    globalFailureControl,
+    updateGlobalFailureControl,
   }
 }

@@ -55,6 +55,18 @@
           </div>
         </template>
       </div>
+
+      <!-- 失败行为配置 -->
+      <n-divider title-placement="left">{{ t.actions.failureControl }}</n-divider>
+      <div class="failure-config-row" style="display: flex; gap: 16px;">
+        <n-form-item :label="t.actions.onExecuteFailure" style="flex: 1;">
+          <n-select v-model:value="onExecuteFailure" :options="failureOptions" />
+        </n-form-item>
+        <n-form-item :label="t.actions.onAssertFailure" style="flex: 1;">
+          <n-select v-model:value="onAssertFailure" :options="failureOptions" />
+        </n-form-item>
+      </div>
+
     </div>
 
     <template #action>
@@ -70,9 +82,29 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { NModal, NFormItem, NRadioGroup, NRadio, NTag, NButton, NSpace, NSwitch, NInputNumber, NInput } from 'naive-ui'
-import type { AssertCondition, AssertParams, RecordedAction } from '@/types/recording'
+import {
+  NModal,
+  NFormItem,
+  NRadioGroup,
+  NRadio,
+  NTag,
+  NButton,
+  NSpace,
+  NSwitch,
+  NInputNumber,
+  NInput,
+  NSelect,
+  NDivider,
+} from 'naive-ui'
+import type { AssertCondition, AssertParams, RecordedAction, FailureBehavior } from '@/types/recording'
 import { DEFAULT_TIMEOUT_MS, DEFAULT_INTERVAL_MS } from '@/constants/assertion'
+import { useI18nStore } from '@/stores/i18n'
+
+const i18nStore = useI18nStore()
+const t = computed(() => ({
+  common: i18nStore.t.common,
+  actions: i18nStore.t.actions,
+}))
 
 const visible = ref(false)
 const description = ref('')
@@ -81,6 +113,14 @@ const conditions = ref<AssertCondition[]>([])
 const waitEnabled = ref(false)
 const waitTimeout = ref(DEFAULT_TIMEOUT_MS)
 const waitInterval = ref(DEFAULT_INTERVAL_MS)
+const onExecuteFailure = ref<FailureBehavior>('stop')
+const onAssertFailure = ref<FailureBehavior>('stop')
+
+// 失败选项
+const failureOptions = computed(() => [
+  { label: t.value.actions.stop, value: 'stop' },
+  { label: t.value.actions.continue, value: 'continue' },
+])
 
 // 编辑模式状态
 const editMode = ref(false)
@@ -90,8 +130,8 @@ const editingActionId = ref<string | null>(null)
 const dialogTitle = computed(() => editMode.value ? '编辑断言' : '配置断言')
 
 const emit = defineEmits<{
-  confirm: [params: AssertParams]
-  update: [id: string, params: AssertParams]
+  confirm: [params: AssertParams, failureConfig: { onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }]
+  update: [id: string, updates: Partial<RecordedAction>]
   'add-element': []
   'add-image': []
 }>()
@@ -114,6 +154,8 @@ function reset() {
   waitEnabled.value = false
   waitTimeout.value = DEFAULT_TIMEOUT_MS
   waitInterval.value = DEFAULT_INTERVAL_MS
+  onExecuteFailure.value = 'stop'
+  onAssertFailure.value = 'stop'
   editMode.value = false
   editingActionId.value = null
 }
@@ -135,6 +177,8 @@ function edit(action: RecordedAction) {
   waitEnabled.value = params.wait?.enabled ?? false
   waitTimeout.value = params.wait?.timeout ?? DEFAULT_TIMEOUT_MS
   waitInterval.value = params.wait?.interval ?? DEFAULT_INTERVAL_MS
+  onExecuteFailure.value = action.onExecuteFailure || 'stop'
+  onAssertFailure.value = action.onAssertFailure || 'stop'
 
   visible.value = true
 }
@@ -190,9 +234,17 @@ function handleConfirm() {
   }
 
   if (editMode.value && editingActionId.value) {
-    emit('update', editingActionId.value, params)
+    const updates: Partial<RecordedAction> = {
+      params,
+      onExecuteFailure: onExecuteFailure.value,
+      onAssertFailure: onAssertFailure.value,
+    }
+    emit('update', editingActionId.value, updates)
   } else {
-    emit('confirm', params)
+    emit('confirm', params, {
+      onExecuteFailure: onExecuteFailure.value,
+      onAssertFailure: onAssertFailure.value,
+    })
   }
 
   hide()

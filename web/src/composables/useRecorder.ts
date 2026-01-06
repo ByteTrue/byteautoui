@@ -4,6 +4,7 @@ import type {
   RecordedAction,
   RecordingFile,
   RecordingConfig,
+  FailureBehavior,
   CoordinateInfo,
   XPathInfo,
   ElementInfo,
@@ -16,6 +17,34 @@ import type {
   AssertParams,
 } from '@/types/recording'
 import { downloadJSON } from '@/utils/download'
+
+const DEFAULT_FAILURE_BEHAVIOR: FailureBehavior = 'stop'
+
+function normalizeFailureBehavior(value: unknown): FailureBehavior {
+  if (value === 'continue' || value === 'stop') return value
+  return DEFAULT_FAILURE_BEHAVIOR
+}
+
+function normalizeRecordingConfig(config?: Partial<RecordingConfig>): RecordingConfig {
+  return {
+    captureScreenshots: config?.captureScreenshots ?? false,
+    screenshotQuality: config?.screenshotQuality ?? 0.6,
+    recordElementDetails: config?.recordElementDetails ?? true,
+    globalFailureControl: {
+      enabled: config?.globalFailureControl?.enabled ?? false,
+      onExecuteFailure: normalizeFailureBehavior(config?.globalFailureControl?.onExecuteFailure),
+      onAssertFailure: normalizeFailureBehavior(config?.globalFailureControl?.onAssertFailure),
+    },
+  }
+}
+
+function normalizeRecordedAction(action: RecordedAction): RecordedAction {
+  return {
+    ...action,
+    onExecuteFailure: normalizeFailureBehavior(action.onExecuteFailure),
+    onAssertFailure: normalizeFailureBehavior(action.onAssertFailure),
+  }
+}
 
 /**
  * 录制引擎
@@ -34,11 +63,7 @@ export function useRecorder(
   const recordingName = ref(`Recording_${Date.now()}`)
 
   // 录制配置(默认配置)
-  const config = ref<RecordingConfig>({
-    captureScreenshots: false, // 默认不捕获截图(性能考虑)
-    screenshotQuality: 0.6,
-    recordElementDetails: true,
-  })
+  const config = ref<RecordingConfig>(normalizeRecordingConfig())
 
   // 计算属性
   const duration = computed(() => {
@@ -181,6 +206,8 @@ export function useRecorder(
       timestamp: now,
       relativeTime: currentRelativeTime,
       waitAfter: 0, // 默认为0，会在下一个action添加时更新
+      onExecuteFailure: DEFAULT_FAILURE_BEHAVIOR,
+      onAssertFailure: DEFAULT_FAILURE_BEHAVIOR,
       screenshot: await captureScreenshot(),
     }
 
@@ -302,10 +329,35 @@ export function useRecorder(
    * 录制断言操作（支持编辑模式添加）
    * 断言可以在录制中或有已录制内容时添加
    */
-  async function recordAssert(params: AssertParams) {
+  async function recordAssert(
+    params: AssertParams,
+    failureConfig?: { onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }
+  ) {
+    const onExecuteFailure = failureConfig?.onExecuteFailure || DEFAULT_FAILURE_BEHAVIOR
+    const onAssertFailure = failureConfig?.onAssertFailure || DEFAULT_FAILURE_BEHAVIOR
+
     // 如果在录制中，使用标准流程
     if (isRecording.value && !isPaused.value) {
+      // 标准流程暂不支持在这里设置 failureConfig (除非 modify addAction too, but addAction is internal)
+      // Actually addAction sets DEFAULT_FAILURE_BEHAVIOR.
+      // I should modify addAction to accept failure behaviors or update it after adding.
+      // Or just pass it to addAction if I modify addAction signature?
+      // Let's modify addAction signature implicitly via object argument or just manually push for now.
+      
+      // Since addAction is used by other methods, changing it is risky/tedious. 
+      // But wait, recordAssert calls addAction.
+      // Let's look at addAction. It creates baseAction with defaults.
+      
+      // I will skip addAction for assert or modify the action after adding?
+      // actions is a ref.
+      
       await addAction('assert', params)
+      // Find the last action and update it
+      const last = actions.value[actions.value.length - 1]
+      if (last && last.type === 'assert') {
+         last.onExecuteFailure = onExecuteFailure
+         last.onAssertFailure = onAssertFailure
+      }
       return
     }
 
@@ -327,6 +379,8 @@ export function useRecorder(
       timestamp: now,
       relativeTime: newRelativeTime,
       waitAfter: 0, // 最后一个action默认为0
+      onExecuteFailure: onExecuteFailure,
+      onAssertFailure: onAssertFailure,
       params,
     }
     actions.value.push(action)
@@ -369,6 +423,9 @@ export function useRecorder(
     if (merged.timestamp !== current.timestamp) {
       throw new Error('Cannot change action timestamp')
     }
+
+    ;(merged as RecordedAction).onExecuteFailure = normalizeFailureBehavior((merged as RecordedAction).onExecuteFailure)
+    ;(merged as RecordedAction).onAssertFailure = normalizeFailureBehavior((merged as RecordedAction).onAssertFailure)
 
     // 类型安全的合并
     actions.value[index] = merged as RecordedAction
@@ -420,9 +477,9 @@ export function useRecorder(
    */
   function importRecording(file: RecordingFile) {
     recordingName.value = file.name
-    actions.value = file.actions
-    startTime.value = file.createdAt
-    config.value = file.config
+    actions.value = Array.isArray(file.actions) ? file.actions.map(normalizeRecordedAction) : []
+    startTime.value = typeof file.createdAt === 'number' ? file.createdAt : 0
+    config.value = normalizeRecordingConfig(file.config)
   }
 
   /**

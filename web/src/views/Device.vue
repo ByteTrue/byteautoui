@@ -41,7 +41,7 @@ import { useDeviceStore } from '@/stores/device'
 import { useThemeStore } from '@/stores/theme'
 import { useI18nStore } from '@/stores/i18n'
 import type { Platform, UINode } from '@/api/types'
-import type { ElementCondition, ImageCondition, AssertParams } from '@/types/recording'
+import type { ElementCondition, ImageCondition, AssertParams, RecordedAction, FailureBehavior } from '@/types/recording'
 import { generateXPath as generateNodeXPath, flattenNodes } from '@/utils/xpath'
 import { sendCommand, tap, setIOSConfig } from '@/api'
 import ScreenPanel from '@/components/ScreenPanel.vue'
@@ -628,9 +628,12 @@ function handleImageConditionConfirm(condition: ImageCondition) {
 }
 
 // 断言参数确认
-function handleAssertParamsConfirm(params: AssertParams) {
+function handleAssertParamsConfirm(
+  params: AssertParams,
+  failureConfig?: { onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }
+) {
   // 录制断言动作
-  actionsPanelRef.value?.recordAssert(params)
+  actionsPanelRef.value?.recordAssert(params, failureConfig)
   message.success('断言已添加')
 }
 
@@ -640,11 +643,11 @@ function handleEditAssert(action: RecordedAction) {
 }
 
 // 断言更新确认（编辑模式）
-function handleAssertParamsUpdate(id: string, params: AssertParams) {
+function handleAssertParamsUpdate(id: string, updates: Partial<RecordedAction>) {
   // 使用recorder.updateAction更新断言
   const recorder = actionsPanelRef.value?.recorder
   if (recorder) {
-    const success = recorder.updateAction(id, { params })
+    const success = recorder.updateAction(id, updates)
     if (success) {
       message.success('断言已更新')
     } else {

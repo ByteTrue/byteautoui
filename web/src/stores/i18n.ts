@@ -220,6 +220,13 @@ const messages = {
         home: '主页',
         assert: '断言',
       },
+
+      // 失败控制
+      failureControl: '失败控制',
+      onExecuteFailure: '执行失败时',
+      onAssertFailure: '断言失败时',
+      continue: '继续执行',
+      stop: '停止回放',
     },
 
     // 包管理面板
@@ -469,6 +476,13 @@ const messages = {
         home: 'Home',
         assert: 'Assert',
       },
+
+      // Failure Control
+      failureControl: 'Failure Control',
+      onExecuteFailure: 'On Execution Failure',
+      onAssertFailure: 'On Assertion Failure',
+      continue: 'Continue',
+      stop: 'Stop Playback',
     },
 
     // Package panel

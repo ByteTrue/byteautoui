@@ -85,6 +85,7 @@ import {
   deleteRecording,
   type RecordingMetadata,
 } from '@/api/recording'
+import type { FailureBehavior } from '@/types/recording'
 
 const props = defineProps<{
   platform: Platform
@@ -344,8 +345,11 @@ function getIsRecording() {
 /**
  * 录制断言操作
  */
-async function recordAssert(params: AssertParams) {
-  await recorder.recordAssert(params)
+async function recordAssert(
+  params: AssertParams,
+  failureConfig?: { onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }
+) {
+  await recorder.recordAssert(params, failureConfig)
 }
 
 // 组件挂载时加载录制列表

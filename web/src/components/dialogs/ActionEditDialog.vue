@@ -222,6 +222,28 @@
           <template #suffix>{{ t.actions.milliseconds }}</template>
         </n-input-number>
       </n-form-item>
+
+      <n-divider title-placement="left">{{ t.actions.failureControl }}</n-divider>
+
+      <!-- 执行失败行为 -->
+      <n-form-item :label="t.actions.onExecuteFailure" path="onExecuteFailure">
+        <n-select
+          v-model:value="formData.onExecuteFailure"
+          :options="failureOptions"
+        />
+      </n-form-item>
+
+      <!-- 断言失败行为（仅断言操作显示） -->
+      <n-form-item
+        v-if="editingAction.type === 'assert'"
+        :label="t.actions.onAssertFailure"
+        path="onAssertFailure"
+      >
+        <n-select
+          v-model:value="formData.onAssertFailure"
+          :options="failureOptions"
+        />
+      </n-form-item>
     </n-form>
   </n-modal>
 </template>
@@ -240,10 +262,11 @@ import {
   NRadio,
   NSwitch,
   NEmpty,
+  NSelect,
   type FormInst,
   type FormRules,
 } from 'naive-ui'
-import type { RecordedAction } from '@/types/recording'
+import type { RecordedAction, FailureBehavior } from '@/types/recording'
 import { getActionTypeColor } from '@/utils/recordingFormatters'
 import { deepClone } from '@/utils/object'
 import { useI18nStore } from '@/stores/i18n'
@@ -265,6 +288,11 @@ const t = computed(() => ({
   common: i18nStore.t.common,
   actions: i18nStore.t.actions,
 }))
+
+const failureOptions = computed(() => [
+  { label: t.value.actions.stop, value: 'stop' },
+  { label: t.value.actions.continue, value: 'continue' },
+])
 
 const visible = defineModel<boolean>('show', { required: true })
 const formRef = ref<FormInst | null>(null)
@@ -317,6 +345,14 @@ watch(
     // 确保 waitAfter 存在
     if (formData.value.waitAfter === undefined) {
       formData.value.waitAfter = 0
+    }
+
+    // 确保失败配置存在 (默认为 stop)
+    if (!formData.value.onExecuteFailure) {
+      formData.value.onExecuteFailure = 'stop'
+    }
+    if (!formData.value.onAssertFailure) {
+      formData.value.onAssertFailure = 'stop'
     }
 
     // 确保嵌套对象存在
@@ -392,6 +428,14 @@ async function handleSave() {
     // 完成后等待时间（所有类型都有）
     if (formData.value.waitAfter !== editingAction.value.waitAfter) {
       (updates as any).waitAfter = formData.value.waitAfter
+    }
+
+    // 失败行为配置
+    if (formData.value.onExecuteFailure !== editingAction.value.onExecuteFailure) {
+      (updates as any).onExecuteFailure = formData.value.onExecuteFailure
+    }
+    if (editingAction.value.type === 'assert' && formData.value.onAssertFailure !== editingAction.value.onAssertFailure) {
+      (updates as any).onAssertFailure = formData.value.onAssertFailure
     }
 
     // 根据类型复制修改的字段

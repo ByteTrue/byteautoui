@@ -1,5 +1,7 @@
 import type { Platform } from '@/api/types'
 
+export type FailureBehavior = 'continue' | 'stop'
+
 /**
  * 录制配置
  */
@@ -7,6 +9,11 @@ export interface RecordingConfig {
   captureScreenshots: boolean // 是否捕获截图
   screenshotQuality: number // 截图质量 0-1
   recordElementDetails: boolean // 是否记录元素详细信息
+  globalFailureControl?: {
+    enabled: boolean
+    onExecuteFailure: FailureBehavior
+    onAssertFailure: FailureBehavior
+  }
 }
 
 /**
@@ -153,11 +160,13 @@ export type ActionParams = TapParams | SwipeParams | InputParams | SleepParams |
  */
 
 // 基础元数据（所有操作共享）
-interface BaseAction {
+export interface BaseAction {
   id: string
   timestamp: number
   relativeTime: number       // 相对于录制开始的时间（内部使用）
   waitAfter: number          // 完成后等待时间（毫秒），用于UI显示和编辑
+  onExecuteFailure: FailureBehavior
+  onAssertFailure: FailureBehavior
   screenshot?: string
 }
 
