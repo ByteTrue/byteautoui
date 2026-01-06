@@ -42,6 +42,7 @@ import { useThemeStore } from '@/stores/theme'
 import { useI18nStore } from '@/stores/i18n'
 import type { Platform, UINode } from '@/api/types'
 import type { ElementCondition, ImageCondition, AssertParams } from '@/types/recording'
+import { generateXPath as generateNodeXPath, flattenNodes } from '@/utils/xpath'
 import { sendCommand, tap, setIOSConfig } from '@/api'
 import ScreenPanel from '@/components/ScreenPanel.vue'
 import HierarchyPanel from '@/components/panels/HierarchyPanel.vue'
@@ -568,14 +569,22 @@ function handleAssertMenuSelect(key: string) {
 
 // 元素选择完成
 function handleElementSelected(node: UINode) {
-  // 提取 XPath（优先使用 node.xpath，降级为属性生成）
-  const xpath = node.xpath || generateXPath('id', node) || `//*[@class="${node.class_name}"]`
+  // 获取所有节点的扁平列表用于 XPath 生成
+  const allNodes = store.hierarchy?.nodes ? flattenNodes(store.hierarchy.nodes) : []
 
-  // 提取属性
-  const attributes: { text?: string; resourceId?: string; className?: string } = {}
+  // 生成 XPath（优先使用 node.xpath，降级为智能生成）
+  // generateNodeXPath 会按优先级选择最佳定位器：
+  // - Android: resource-id > content-desc > text > class+index
+  // - iOS: name > label > class+index
+  const xpath = node.xpath || generateNodeXPath(node, allNodes)
+
+  // 提取属性（用于对话框显示）
+  const attributes: { text?: string; resourceId?: string; className?: string; name?: string; label?: string } = {}
   if (node.text) attributes.text = node.text
   if (node.resource_id) attributes.resourceId = node.resource_id
   if (node.class_name) attributes.className = node.class_name
+  if (node.name) attributes.name = node.name
+  if (node.label) attributes.label = node.label
 
   // 打开 ElementSelectorDialog 并预填充
   elementSelectorDialogRef.value?.show()
