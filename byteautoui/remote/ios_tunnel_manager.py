@@ -28,6 +28,7 @@ class IOSTunnelManager:
                 instance = super().__new__(cls)
                 # 实例属性（不是类变量）
                 instance._tunnel_processes: Dict[str, subprocess.Popen] = {}
+                instance._tunnel_log_files: Dict[str, object] = {}  # 日志文件句柄
                 instance._device_ref_counts: Dict[str, int] = {}
                 cls._instance = instance
             return cls._instance
@@ -51,6 +52,12 @@ class IOSTunnelManager:
                 del self._tunnel_processes[udid]
                 if udid in self._device_ref_counts:
                     del self._device_ref_counts[udid]
+                if udid in self._tunnel_log_files:
+                    try:
+                        self._tunnel_log_files[udid].close()
+                    except Exception:
+                        pass
+                    del self._tunnel_log_files[udid]
 
         # 检查系统中是否有该设备的tunnel进程
         try:
@@ -89,6 +96,10 @@ class IOSTunnelManager:
         logger.info(f"Starting tunnel for device {udid[:8]}...")
 
         try:
+            # 打开日志文件
+            log_path = f"/tmp/ios_tunnel_{udid[:8]}.log"
+            log_file = open(log_path, "w", buffering=1)
+
             cmd = [
                 "ios",
                 "tunnel",
@@ -97,33 +108,50 @@ class IOSTunnelManager:
                 "--userspace"
             ]
 
-            # 使用 DEVNULL 避免 SIGPIPE（进程写日志时不会因管道关闭而死亡）
+            # 重定向 stdout/stderr 到日志文件
             process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
             )
 
             time.sleep(0.3)
 
             if process.poll() is not None:
+                # 进程启动失败，读取日志
+                log_file.close()
+                try:
+                    with open(log_path, "r") as f:
+                        log_lines = f.readlines()
+                        last_lines = "".join(log_lines[-10:]) if log_lines else "(no logs)"
+                except Exception:
+                    last_lines = "(failed to read logs)"
+
                 raise RuntimeError(
                     f"Tunnel failed to start (exit code: {process.returncode})\n"
                     f"请检查:\n"
                     f"1. go-ios 是否已正确安装\n"
                     f"2. 设备 {udid[:8]}... 是否已连接并信任\n"
-                    f"3. 运行 'ios tunnel start --udid={udid} --userspace' 查看详细错误"
+                    f"3. 详细日志: {log_path}\n"
+                    f"最后几行输出:\n{last_lines}"
                 )
 
             self._tunnel_processes[udid] = process
+            self._tunnel_log_files[udid] = log_file
             self._device_ref_counts[udid] = 1
-            logger.info(f"Tunnel started successfully for {udid[:8]}... (ref_count: 1)")
+            logger.info(f"Tunnel started successfully for {udid[:8]}... (ref_count: 1, logs: {log_path})")
             return True
 
         except Exception as e:
             logger.error(f"Failed to start tunnel for {udid}: {e}")
             if udid in self._tunnel_processes:
                 del self._tunnel_processes[udid]
+            if udid in self._tunnel_log_files:
+                try:
+                    self._tunnel_log_files[udid].close()
+                except Exception:
+                    pass
+                del self._tunnel_log_files[udid]
             return False
 
     def release_device(self, udid: str):
@@ -158,6 +186,14 @@ class IOSTunnelManager:
             del self._tunnel_processes[udid]
             if udid in self._device_ref_counts:
                 del self._device_ref_counts[udid]
+
+            # 关闭日志文件
+            if udid in self._tunnel_log_files:
+                try:
+                    self._tunnel_log_files[udid].close()
+                except Exception:
+                    pass
+                del self._tunnel_log_files[udid]
 
     def cleanup(self):
         """清理所有资源（应用关闭时调用）"""

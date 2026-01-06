@@ -51,6 +51,10 @@ class IOSDriver(BaseDriver):
 
         self.wda = wdapy.AppiumUSBClient(self.device.serial)
 
+        # 禁用 wdapy 的自动恢复机制（使用 tidevice）
+        # 我们使用自己的监控线程通过 go-ios 来管理 WDA 生命周期
+        self.wda.set_recover_handler(None)
+
         # MJPEG流管理（用于指针模式）
         self._mjpeg_stream: Optional[IOSMJPEGStream] = None
         self._configure_mjpeg_settings()

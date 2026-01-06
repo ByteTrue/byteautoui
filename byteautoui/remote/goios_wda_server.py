@@ -38,11 +38,16 @@ class GoIOSWDAServer:
     1. 启动go-ios tunnel (iOS 17+需要)
     2. 启动WDA (使用ios runwda命令)
     3. 端口转发 (8100:8100 for HTTP, 9100:9100 for MJPEG)
-    4. 清理资源
+    4. 监控进程健康状态并自动恢复
+    5. 清理资源
     """
 
     # WDA MJPEG 默认端口
     DEFAULT_MJPEG_PORT = 9100
+
+    # 监控配置
+    MONITOR_INTERVAL = 5  # 每5秒检查一次
+    RESTART_COOLDOWN = 10  # 重启冷却时间，防止频繁重启
 
     def __init__(self, device_udid: str, wda_bundle_id: Optional[str] = None, wda_port: Optional[int] = None, mjpeg_port: Optional[int] = None):
         """
@@ -56,6 +61,16 @@ class GoIOSWDAServer:
         self._wda_process: Optional[subprocess.Popen] = None
         self._forward_process: Optional[subprocess.Popen] = None
         self._mjpeg_forward_process: Optional[subprocess.Popen] = None
+
+        # 日志文件句柄
+        self._wda_log_file = None
+        self._forward_log_file = None
+        self._mjpeg_forward_log_file = None
+
+        # 监控线程
+        self._monitor_thread: Optional[threading.Thread] = None
+        self._monitor_stop_event = threading.Event()
+        self._last_restart_time = 0  # 上次重启时间
 
         # 获取配置管理器
         self._config_manager = get_ios_config_manager()
@@ -106,6 +121,7 @@ class GoIOSWDAServer:
         2. 端口转发
         3. 检查WDA是否已可用
         4. 必要时启动WDA并等待ready
+        5. 启动监控线程
         """
         # 获取设备锁，防止并发启动
         device_lock = _get_device_lock(self.device_udid)
@@ -113,6 +129,7 @@ class GoIOSWDAServer:
         with device_lock:
             if self._is_wda_running():
                 logger.info(f"WDA already running on port {self.wda_port}")
+                self._start_monitor()  # 确保监控线程运行
                 return
 
             start_time = time.time()
@@ -148,6 +165,7 @@ class GoIOSWDAServer:
                         forward_cost,
                         time.time() - start_time,
                     )
+                    self._start_monitor()  # 启动监控
                     return
 
                 # 步骤4: 启动WDA并等待ready
@@ -168,15 +186,196 @@ class GoIOSWDAServer:
                     time.time() - start_time,
                 )
 
+                # 步骤5: 启动监控线程
+                self._start_monitor()
+
             except Exception as e:
                 self.close()
                 raise RuntimeError(f"Failed to start WDA: {e}")
+
+    def _start_monitor(self):
+        """启动监控线程"""
+        if self._monitor_thread and self._monitor_thread.is_alive():
+            return  # 监控线程已在运行
+
+        self._monitor_stop_event.clear()
+        self._monitor_thread = threading.Thread(
+            target=self._monitor_loop,
+            name=f"WDAMonitor-{self.device_udid[:8]}",
+            daemon=True
+        )
+        self._monitor_thread.start()
+        logger.info(f"Monitor thread started for device {self.device_udid[:8]}...")
+
+    def _stop_monitor(self):
+        """停止监控线程"""
+        if not self._monitor_thread:
+            return
+
+        self._monitor_stop_event.set()
+        if self._monitor_thread.is_alive():
+            self._monitor_thread.join(timeout=2)
+        self._monitor_thread = None
+        logger.info(f"Monitor thread stopped for device {self.device_udid[:8]}...")
+
+    def _monitor_loop(self):
+        """监控循环：定期检查进程健康状态"""
+        logger.info(f"Monitor loop started for device {self.device_udid[:8]}...")
+
+        while not self._monitor_stop_event.wait(timeout=self.MONITOR_INTERVAL):
+            try:
+                # 检查1: tunnel进程是否还活着
+                if not self._tunnel_manager.is_tunnel_running(self.device_udid):
+                    logger.error(f"Tunnel process died for device {self.device_udid[:8]}..., attempting restart")
+                    self._attempt_restart()
+                    continue
+
+                # 检查2: WDA进程是否还活着
+                if self._wda_process and self._wda_process.poll() is not None:
+                    logger.error(f"WDA process died (exit code: {self._wda_process.returncode}), attempting restart")
+                    self._attempt_restart()
+                    continue
+
+                # 检查3: 端口转发进程是否还活着
+                if self._forward_process and self._forward_process.poll() is not None:
+                    logger.error(f"Port forward process died (exit code: {self._forward_process.returncode}), attempting restart")
+                    self._attempt_restart()
+                    continue
+
+                # 检查4: WDA HTTP健康检查
+                if not self._is_wda_running():
+                    logger.error(f"WDA health check failed for device {self.device_udid[:8]}..., attempting restart")
+                    self._attempt_restart()
+                    continue
+
+                # 全部检查通过
+                logger.debug(f"Health check passed for device {self.device_udid[:8]}...")
+
+            except Exception as e:
+                logger.error(f"Error in monitor loop for device {self.device_udid[:8]}...: {e}")
+
+        logger.info(f"Monitor loop exited for device {self.device_udid[:8]}...")
+
+    def _attempt_restart(self):
+        """尝试重启WDA（带冷却时间保护）"""
+        current_time = time.time()
+
+        # 检查冷却时间，防止频繁重启
+        if current_time - self._last_restart_time < self.RESTART_COOLDOWN:
+            logger.warning(
+                f"Restart cooldown active for device {self.device_udid[:8]}... "
+                f"(last restart: {current_time - self._last_restart_time:.1f}s ago)"
+            )
+            return
+
+        self._last_restart_time = current_time
+        logger.info(f"Attempting to restart WDA for device {self.device_udid[:8]}...")
+
+        try:
+            # 清理现有进程
+            self._cleanup_processes()
+
+            # 重新启动（不使用锁，因为我们在监控线程中）
+            start_time = time.time()
+
+            # 重启tunnel
+            if not self._tunnel_manager.start_tunnel(self.device_udid, force=True):
+                raise RuntimeError(f"Failed to restart tunnel for device {self.device_udid}")
+
+            # 重启端口转发
+            self._start_port_forward()
+            self._start_mjpeg_port_forward()
+
+            # 重启WDA
+            self._start_wda()
+            if not self._wait_for_wda_ready(timeout=30):
+                raise RuntimeError(f"WDA failed to restart within 30 seconds")
+
+            logger.info(
+                f"WDA restarted successfully for device {self.device_udid[:8]}... "
+                f"(took {time.time() - start_time:.2f}s)"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to restart WDA for device {self.device_udid[:8]}...: {e}")
+
+    def _cleanup_processes(self):
+        """清理所有子进程（不清理tunnel，由TunnelManager管理）"""
+        # 关闭端口转发（WDA HTTP）
+        if self._forward_process:
+            try:
+                self._forward_process.terminate()
+                self._forward_process.wait(timeout=2)
+            except Exception:
+                try:
+                    self._forward_process.kill()
+                except Exception:
+                    pass
+            finally:
+                self._forward_process = None
+
+        # 关闭端口转发日志文件
+        if self._forward_log_file:
+            try:
+                self._forward_log_file.close()
+            except Exception:
+                pass
+            finally:
+                self._forward_log_file = None
+
+        # 关闭端口转发（MJPEG）
+        if self._mjpeg_forward_process:
+            try:
+                self._mjpeg_forward_process.terminate()
+                self._mjpeg_forward_process.wait(timeout=2)
+            except Exception:
+                try:
+                    self._mjpeg_forward_process.kill()
+                except Exception:
+                    pass
+            finally:
+                self._mjpeg_forward_process = None
+
+        # 关闭 MJPEG 端口转发日志文件
+        if self._mjpeg_forward_log_file:
+            try:
+                self._mjpeg_forward_log_file.close()
+            except Exception:
+                pass
+            finally:
+                self._mjpeg_forward_log_file = None
+
+        # 关闭WDA
+        if self._wda_process:
+            try:
+                self._wda_process.terminate()
+                self._wda_process.wait(timeout=2)
+            except Exception:
+                try:
+                    self._wda_process.kill()
+                except Exception:
+                    pass
+            finally:
+                self._wda_process = None
+
+        # 关闭 WDA 日志文件
+        if self._wda_log_file:
+            try:
+                self._wda_log_file.close()
+            except Exception:
+                pass
+            finally:
+                self._wda_log_file = None
 
     def _start_wda(self):
         """启动WDA"""
         if self._wda_process and self._wda_process.poll() is None:
             return
         logger.info(f"Starting WDA with bundle ID: {self.wda_bundle_id}")
+
+        # 打开日志文件（w模式覆盖旧日志）
+        log_path = f"/tmp/wda_{self.device_udid[:8]}.log"
+        self._wda_log_file = open(log_path, "w", buffering=1)  # 行缓冲
 
         cmd = [
             "ios",
@@ -187,11 +386,11 @@ class GoIOSWDAServer:
             f"--udid={self.device_udid}"
         ]
 
-        # 使用 DEVNULL 避免 SIGPIPE（进程写日志时不会因管道关闭而死亡）
+        # 重定向 stdout/stderr 到日志文件
         self._wda_process = subprocess.Popen(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=self._wda_log_file,
+            stderr=subprocess.STDOUT,  # 合并 stderr 到 stdout
         )
 
         time.sleep(0.3)
@@ -199,15 +398,28 @@ class GoIOSWDAServer:
         if self._wda_process.poll() is not None:
             exit_code = self._wda_process.returncode
             self._wda_process = None  # 清理引用，避免资源泄漏
+
+            # 关闭日志文件并读取最后几行
+            self._wda_log_file.close()
+            try:
+                with open(log_path, "r") as f:
+                    log_lines = f.readlines()
+                    last_lines = "".join(log_lines[-10:]) if log_lines else "(no logs)"
+            except Exception:
+                last_lines = "(failed to read logs)"
+            finally:
+                self._wda_log_file = None
+
             raise RuntimeError(
                 f"WDA failed to start (exit code: {exit_code})\n"
                 f"请检查:\n"
                 f"1. WDA是否已安装到设备 (bundle ID: {self.wda_bundle_id})\n"
                 f"2. bundle ID是否正确\n"
-                f"3. 运行 'ios runwda --bundleid={self.wda_bundle_id} --udid={self.device_udid}' 查看详细错误"
+                f"3. 查看详细日志: {log_path}\n"
+                f"最后几行输出:\n{last_lines}"
             )
 
-        logger.info("WDA process started")
+        logger.info(f"WDA process started (logs: {log_path})")
 
     def _start_port_forward(self):
         """启动端口转发（WDA HTTP）"""
@@ -215,6 +427,10 @@ class GoIOSWDAServer:
             return
         logger.info(f"Starting port forward {self.wda_port}:{self.wda_port}")
 
+        # 打开日志文件
+        log_path = f"/tmp/wda_forward_{self.device_udid[:8]}_{self.wda_port}.log"
+        self._forward_log_file = open(log_path, "w", buffering=1)
+
         cmd = [
             "ios",
             "forward",
@@ -223,11 +439,11 @@ class GoIOSWDAServer:
             f"--udid={self.device_udid}"
         ]
 
-        # 使用 DEVNULL 避免 SIGPIPE
+        # 重定向 stdout/stderr 到日志文件
         self._forward_process = subprocess.Popen(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=self._forward_log_file,
+            stderr=subprocess.STDOUT,
         )
 
         time.sleep(0.3)
@@ -235,15 +451,35 @@ class GoIOSWDAServer:
         if self._forward_process.poll() is not None:
             exit_code = self._forward_process.returncode
             self._forward_process = None  # 清理引用，避免资源泄漏
-            raise RuntimeError(f"Port forward failed (exit code: {exit_code})")
 
-        logger.info("Port forward established")
+            # 关闭日志文件并读取最后几行
+            self._forward_log_file.close()
+            try:
+                with open(log_path, "r") as f:
+                    log_lines = f.readlines()
+                    last_lines = "".join(log_lines[-10:]) if log_lines else "(no logs)"
+            except Exception:
+                last_lines = "(failed to read logs)"
+            finally:
+                self._forward_log_file = None
+
+            raise RuntimeError(
+                f"Port forward failed (exit code: {exit_code})\n"
+                f"详细日志: {log_path}\n"
+                f"最后几行输出:\n{last_lines}"
+            )
+
+        logger.info(f"Port forward established (logs: {log_path})")
 
     def _start_mjpeg_port_forward(self):
         """启动端口转发（WDA MJPEG）"""
         if self._mjpeg_forward_process and self._mjpeg_forward_process.poll() is None:
             return
         logger.info(f"Starting MJPEG port forward {self.mjpeg_port}:{self.mjpeg_port}")
+
+        # 打开日志文件
+        log_path = f"/tmp/wda_mjpeg_forward_{self.device_udid[:8]}_{self.mjpeg_port}.log"
+        self._mjpeg_forward_log_file = open(log_path, "w", buffering=1)
 
         cmd = [
             "ios",
@@ -253,22 +489,29 @@ class GoIOSWDAServer:
             f"--udid={self.device_udid}"
         ]
 
-        # 使用 DEVNULL 避免 SIGPIPE
+        # 重定向 stdout/stderr 到日志文件
         self._mjpeg_forward_process = subprocess.Popen(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=self._mjpeg_forward_log_file,
+            stderr=subprocess.STDOUT,
         )
 
         time.sleep(0.3)
 
         if self._mjpeg_forward_process.poll() is not None:
             # MJPEG 端口转发失败不是致命错误，只记录警告
-            logger.warning(f"MJPEG port forward failed (exit code: {self._mjpeg_forward_process.returncode})")
+            logger.warning(
+                f"MJPEG port forward failed (exit code: {self._mjpeg_forward_process.returncode})\n"
+                f"详细日志: {log_path}"
+            )
+            # 关闭日志文件
+            if self._mjpeg_forward_log_file:
+                self._mjpeg_forward_log_file.close()
             self._mjpeg_forward_process = None
+            self._mjpeg_forward_log_file = None
             return
 
-        logger.info("MJPEG port forward established")
+        logger.info(f"MJPEG port forward established (logs: {log_path})")
 
     def _is_port_open(self, port: int, timeout: float = 1) -> bool:
         """检查端口是否可连接"""
@@ -395,49 +638,14 @@ class GoIOSWDAServer:
         """
         with _active_servers_lock:
             _active_servers.discard(self)
+
+        # 先停止监控线程
+        self._stop_monitor()
+
         logger.info("Closing go-ios WDA server")
 
-        # 关闭端口转发（WDA HTTP）
-        if self._forward_process:
-            try:
-                self._forward_process.terminate()
-                self._forward_process.wait(timeout=2)
-            except Exception as e:
-                logger.debug(f"Error closing forward process: {e}")
-                try:
-                    self._forward_process.kill()
-                except Exception:
-                    pass
-            finally:
-                self._forward_process = None
-
-        # 关闭端口转发（MJPEG）
-        if self._mjpeg_forward_process:
-            try:
-                self._mjpeg_forward_process.terminate()
-                self._mjpeg_forward_process.wait(timeout=2)
-            except Exception as e:
-                logger.debug(f"Error closing MJPEG forward process: {e}")
-                try:
-                    self._mjpeg_forward_process.kill()
-                except Exception:
-                    pass
-            finally:
-                self._mjpeg_forward_process = None
-
-        # 关闭WDA
-        if self._wda_process:
-            try:
-                self._wda_process.terminate()
-                self._wda_process.wait(timeout=2)
-            except Exception as e:
-                logger.debug(f"Error closing WDA process: {e}")
-                try:
-                    self._wda_process.kill()
-                except Exception:
-                    pass
-            finally:
-                self._wda_process = None
+        # 清理所有子进程
+        self._cleanup_processes()
 
         # 通知tunnel管理器释放设备
         self._tunnel_manager.release_device(self.device_udid)
