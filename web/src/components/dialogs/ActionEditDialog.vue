@@ -5,6 +5,7 @@
     :title="dialogTitle"
     :positive-text="t.common.save"
     :negative-text="t.common.cancel"
+    :style="{ width: '700px', maxWidth: '90vw' }"
     @positive-click="handleSave"
     @negative-click="handleCancel"
   >
@@ -223,26 +224,11 @@
         </n-input-number>
       </n-form-item>
 
-      <n-divider title-placement="left">{{ t.actions.failureControl }}</n-divider>
+      <n-divider title-placement="left">{{ t.actions.failureControl.title }}</n-divider>
 
-      <!-- 执行失败行为 -->
-      <n-form-item :label="t.actions.onExecuteFailure" path="onExecuteFailure">
-        <n-select
-          v-model:value="formData.onExecuteFailure"
-          :options="failureOptions"
-        />
-      </n-form-item>
-
-      <!-- 断言失败行为（仅断言操作显示） -->
-      <n-form-item
-        v-if="editingAction.type === 'assert'"
-        :label="t.actions.onAssertFailure"
-        path="onAssertFailure"
-      >
-        <n-select
-          v-model:value="formData.onAssertFailure"
-          :options="failureOptions"
-        />
+      <!-- 失败行为配置 -->
+      <n-form-item label="执行失败时停止回放" path="stopOnFailure">
+        <n-switch v-model:value="formData.stopOnFailure" />
       </n-form-item>
     </n-form>
   </n-modal>
@@ -289,11 +275,6 @@ const t = computed(() => ({
   actions: i18nStore.t.actions,
 }))
 
-const failureOptions = computed(() => [
-  { label: t.value.actions.stop, value: 'stop' },
-  { label: t.value.actions.continue, value: 'continue' },
-])
-
 const visible = defineModel<boolean>('show', { required: true })
 const formRef = ref<FormInst | null>(null)
 
@@ -312,7 +293,7 @@ const formData = ref<any>({
   waitAfter: 0,
   coords: { x: 0, y: 0, scaleX: 0, scaleY: 0 },
   endCoords: { x: 0, y: 0, scaleX: 0, scaleY: 0 },
-  xpath: { selector: '', fallbackCoords: { x: 0, y: 0 } },
+  xpath: { selector: '' },
   params: {},
 })
 
@@ -347,13 +328,8 @@ watch(
       formData.value.waitAfter = 0
     }
 
-    // 确保失败配置存在 (默认为 stop)
-    if (!formData.value.onExecuteFailure) {
-      formData.value.onExecuteFailure = 'stop'
-    }
-    if (!formData.value.onAssertFailure) {
-      formData.value.onAssertFailure = 'stop'
-    }
+    // 失败控制: 转换为开关状态 (true = stop, false = continue)
+    formData.value.stopOnFailure = (newAction.onFailure || 'stop') === 'stop'
 
     // 确保嵌套对象存在
     if (!formData.value.coords) {
@@ -363,7 +339,7 @@ watch(
       formData.value.endCoords = { x: 0, y: 0, scaleX: 0, scaleY: 0 }
     }
     if (!formData.value.xpath) {
-      formData.value.xpath = { selector: '', fallbackCoords: { x: 0, y: 0 } }
+      formData.value.xpath = { selector: '' }
     }
     if (!formData.value.params) {
       formData.value.params = {}
@@ -431,19 +407,20 @@ async function handleSave() {
     }
 
     // 失败行为配置
-    if (formData.value.onExecuteFailure !== editingAction.value.onExecuteFailure) {
-      (updates as any).onExecuteFailure = formData.value.onExecuteFailure
-    }
-    if (editingAction.value.type === 'assert' && formData.value.onAssertFailure !== editingAction.value.onAssertFailure) {
-      (updates as any).onAssertFailure = formData.value.onAssertFailure
+    const newOnFailure: FailureBehavior = formData.value.stopOnFailure ? 'stop' : 'continue'
+    if (newOnFailure !== editingAction.value.onFailure) {
+      (updates as any).onFailure = newOnFailure
     }
 
     // 根据类型复制修改的字段
     if (editingAction.value.type === 'tap') {
-      if (
-        formData.value.coords.x !== editingAction.value.coords.x ||
-        formData.value.coords.y !== editingAction.value.coords.y
-      ) {
+      // 检查坐标是否变化（需要检查原始 action 是否有 coords）
+      const oldCoords = editingAction.value.coords
+      const coordsChanged = oldCoords
+        ? (formData.value.coords.x !== oldCoords.x || formData.value.coords.y !== oldCoords.y)
+        : true // 如果原始 action 没有 coords（有 xpath），则认为坐标已变化
+
+      if (coordsChanged) {
         // 坐标变化，重新计算 scale（验证屏幕尺寸防止除零）
         const { width, height } = props.screenSize
         if (!width || !height || width <= 0 || height <= 0) {
@@ -470,10 +447,6 @@ async function handleSave() {
         if (newXPath) {
           (updates as any).xpath = {
             selector: newXPath,
-            fallbackCoords: {
-              x: formData.value.coords.x,
-              y: formData.value.coords.y,
-            },
           }
         } else {
           // 清空 XPath
@@ -481,11 +454,15 @@ async function handleSave() {
         }
       }
     } else if (editingAction.value.type === 'swipe') {
-      const coordsChanged =
-        formData.value.coords.x !== editingAction.value.coords.x ||
-        formData.value.coords.y !== editingAction.value.coords.y ||
-        formData.value.endCoords.x !== editingAction.value.endCoords.x ||
-        formData.value.endCoords.y !== editingAction.value.endCoords.y
+      // 检查坐标是否变化（需要检查原始 action 是否有 coords/endCoords）
+      const oldCoords = editingAction.value.coords
+      const oldEndCoords = editingAction.value.endCoords
+      const coordsChanged = oldCoords && oldEndCoords
+        ? (formData.value.coords.x !== oldCoords.x ||
+           formData.value.coords.y !== oldCoords.y ||
+           formData.value.endCoords.x !== oldEndCoords.x ||
+           formData.value.endCoords.y !== oldEndCoords.y)
+        : true // 如果原始 action 缺少 coords，则认为坐标已变化
 
       if (coordsChanged) {
         // 坐标变化，重新计算 scale（验证屏幕尺寸防止除零）

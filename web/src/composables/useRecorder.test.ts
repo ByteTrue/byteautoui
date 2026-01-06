@@ -81,13 +81,11 @@ describe('useRecorder', () => {
 
     expect(recorder.config.value.globalFailureControl).toEqual({
       enabled: false,
-      onExecuteFailure: 'stop',
-      onAssertFailure: 'stop',
+      onFailure: 'stop',
     })
 
     for (const action of recorder.actions.value) {
-      expect(action.onExecuteFailure).toBe('stop')
-      expect(action.onAssertFailure).toBe('stop')
+      expect(action.onFailure).toBe('stop')
     }
   })
 
@@ -108,7 +106,8 @@ describe('useRecorder', () => {
 
     await recorder.recordTap(10, 20, node)
     const withDetails = recorder.actions.value[0] as any
-    expect(withDetails.xpath).toEqual({ selector: node.xpath, fallbackCoords: { x: 10, y: 20 } })
+    expect(withDetails.xpath).toEqual({ selector: node.xpath })
+    expect(withDetails.coords).toBeUndefined() // 有XPath时不记录coords
     expect(withDetails.element).toMatchObject({
       text: 'OK',
       label: 'OK',
@@ -183,13 +182,12 @@ describe('useRecorder', () => {
     ).toThrow('Cannot change action timestamp')
 
     expect(
-      recorder.updateAction(first!.id, { waitAfter: 42, onExecuteFailure: 'continue', onAssertFailure: 'nope' } as any)
+      recorder.updateAction(first!.id, { waitAfter: 42, onFailure: 'continue' } as any)
     ).toBe(true)
 
     const updated = recorder.actions.value[0]!
     expect(updated.waitAfter).toBe(42)
-    expect(updated.onExecuteFailure).toBe('continue')
-    expect(updated.onAssertFailure).toBe('stop')
+    expect(updated.onFailure).toBe('continue')
 
     recorder.deleteAction(updated.id)
     expect(recorder.actions.value).toHaveLength(0)
@@ -227,8 +225,7 @@ describe('useRecorder', () => {
     expect(file.deviceInfo).toEqual({ serial: 'serial-1', screenWidth: 300, screenHeight: 400 })
     expect(file.config.globalFailureControl).toEqual({
       enabled: false,
-      onExecuteFailure: 'stop',
-      onAssertFailure: 'stop',
+      onFailure: 'stop',
     })
     expect(file.actions).toHaveLength(2)
     expect(file.duration).toBe(2000)
@@ -259,18 +256,16 @@ describe('useRecorder', () => {
           waitAfter: 0,
           coords: { x: 1, y: 2, scaleX: 0.01, scaleY: 0.02 },
           params: { x: 1, y: 2 },
-          onExecuteFailure: 'bad-value',
+          onFailure: 'bad-value',
         },
       ],
     }
 
     recorder.importRecording(legacy)
-    expect(recorder.actions.value[0]?.onExecuteFailure).toBe('stop')
-    expect(recorder.actions.value[0]?.onAssertFailure).toBe('stop')
+    expect(recorder.actions.value[0]?.onFailure).toBe('stop')
     expect(recorder.config.value.globalFailureControl).toEqual({
       enabled: false,
-      onExecuteFailure: 'stop',
-      onAssertFailure: 'stop',
+      onFailure: 'stop',
     })
 
     const exported = recorder.exportRecording()
@@ -320,8 +315,7 @@ describe('useRecorder', () => {
     mockFilePicker({ text: async () => JSON.stringify(okFile) })
     const loaded = await recorder.loadFromFile()
     expect(loaded.name).toBe('ok')
-    expect(recorder.actions.value[0]?.onExecuteFailure).toBe('stop')
-    expect(recorder.actions.value[0]?.onAssertFailure).toBe('stop')
+    expect(recorder.actions.value[0]?.onFailure).toBe('stop')
 
     // 失败：未选择文件
     mockFilePicker(null)

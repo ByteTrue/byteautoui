@@ -56,7 +56,7 @@
           </div>
           <div class="result-secondary">
             <span v-if="result.resource_id" class="result-tag">{{ result.resource_id }}</span>
-            <span v-if="result.label" class="result-tag">{{ result.label }}</span>
+            <span v-if="result.label" class="result-tag">label={{ result.label }}</span>
             <span v-if="result.class_name" class="result-tag">{{ result.class_name }}</span>
           </div>
         </div>
@@ -133,11 +133,13 @@ watch(
   () => props.platform,
   (platform) => {
     if (platform === 'ios') {
-      if (searchType.value !== 'label' && searchType.value !== 'xpath' && searchType.value !== 'className') {
+      // iOS 平台：只支持 label, xpath, className
+      if (!['label', 'xpath', 'className'].includes(searchType.value)) {
         searchType.value = 'label'
       }
       return
     }
+    // Android 平台：不支持 label
     if (searchType.value === 'label') {
       searchType.value = 'text'
     }
@@ -185,7 +187,7 @@ function renderTreeLabel({ option }: { option: TreeOption }) {
     h('span', { class: 'tree-node-class' }, className),
   ]
 
-  // 添加 id 和/或 text（蓝色高亮）
+  // 添加 id 和/或 text/label（蓝色高亮）
   if (node.resource_id) {
     const shortId = node.resource_id.split('/').pop() || node.resource_id
     elements.push(h('span', { class: 'tree-node-highlight' }, ` id=${shortId}`))

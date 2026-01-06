@@ -160,6 +160,7 @@ import { computed } from 'vue'
 
 interface Props {
   recorder: any // useRecorder composable
+  player: any // usePlayer composable
   currentPlaybackIndex: number
   isPlaybackActive: boolean
   t: any // i18n translations
@@ -225,26 +226,26 @@ function getAssertResultTag(action: RecordedAction): { show: boolean; text: stri
 // 获取失败配置信息
 function getFailureConfigInfo(action: RecordedAction) {
   // 检查是否被全局覆盖
-  const globalConfig = props.recorder.recordingConfig.value?.globalFailureControl
+  const globalConfig = props.player?.globalFailureControl?.value
   const isGlobalEnabled = globalConfig?.enabled
-  
-  const behavior = isGlobalEnabled 
-    ? (action.type === 'assert' ? globalConfig.onAssertFailure : globalConfig.onExecuteFailure)
-    : (action.type === 'assert' ? action.onAssertFailure : action.onExecuteFailure)
-    
+
+  const behavior = isGlobalEnabled
+    ? globalConfig.onFailure
+    : action.onFailure
+
   // 默认为 stop
   const finalBehavior = behavior || 'stop'
-  
+
   // 只有非默认行为(continue)才显示，或者是全局启用时显示
   if (finalBehavior === 'stop' && !isGlobalEnabled) return null
-  
+
   return {
     behavior: finalBehavior,
     isGlobal: isGlobalEnabled,
     icon: finalBehavior === 'continue' ? WarningOutline : CloseCircleOutline,
     color: finalBehavior === 'continue' ? 'warning' : 'error',
-    tooltip: isGlobalEnabled 
-      ? props.t.failureControl.globalSwitch 
+    tooltip: isGlobalEnabled
+      ? props.t.failureControl.globalSwitch
       : (finalBehavior === 'continue' ? props.t.failureControl.behaviors.continue : props.t.failureControl.behaviors.stop)
   }
 }

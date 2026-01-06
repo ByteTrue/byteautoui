@@ -3,18 +3,16 @@ import { computed } from 'vue'
 import type { Platform } from '@/api/types'
 import { usePlayer } from '@/composables/usePlayer'
 import type { RecordingFile, RecordedAction } from '@/types/recording'
-import { tap, sendCommand, getHierarchy, assertCombined } from '@/api'
+import { tap, sendCommand, assertCombined } from '@/api'
 
 vi.mock('@/api', () => ({
   tap: vi.fn(),
   sendCommand: vi.fn(),
-  getHierarchy: vi.fn(),
   assertCombined: vi.fn(),
 }))
 
 const tapMock = vi.mocked(tap)
 const sendCommandMock = vi.mocked(sendCommand)
-const getHierarchyMock = vi.mocked(getHierarchy)
 const assertCombinedMock = vi.mocked(assertCombined)
 
 function createPlayer(screen: { width: number; height: number } = { width: 100, height: 200 }) {
@@ -28,8 +26,7 @@ function baseAction(id: string, overrides: Partial<RecordedAction> = {}): any {
     timestamp: 0,
     relativeTime: 0,
     waitAfter: 0,
-    onExecuteFailure: 'stop',
-    onAssertFailure: 'stop',
+    onFailure: 'stop',
     ...overrides,
   }
 }
@@ -49,8 +46,7 @@ function createRecording(actions: any[], overrides: Partial<RecordingFile> = {})
       recordElementDetails: true,
       globalFailureControl: {
         enabled: false,
-        onExecuteFailure: 'stop',
-        onAssertFailure: 'stop',
+        onFailure: 'stop',
       },
     },
     actions: actions as RecordedAction[],
@@ -68,7 +64,6 @@ beforeEach(() => {
 
   tapMock.mockReset().mockResolvedValue(undefined)
   sendCommandMock.mockReset().mockResolvedValue(undefined)
-  getHierarchyMock.mockReset().mockResolvedValue({ nodes: [] } as any)
   assertCombinedMock.mockReset().mockResolvedValue({ success: true, message: 'ok' } as any)
 
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -114,11 +109,9 @@ describe('usePlayer', () => {
     expect(player.progress.value.totalSteps).toBe(1)
     expect(player.globalFailureControl.value).toEqual({
       enabled: false,
-      onExecuteFailure: 'stop',
-      onAssertFailure: 'stop',
+      onFailure: 'stop',
     })
-    expect(player.recording.value?.actions[0]?.onExecuteFailure).toBe('stop')
-    expect(player.recording.value?.actions[0]?.onAssertFailure).toBe('stop')
+    expect(player.recording.value?.actions[0]?.onFailure).toBe('stop')
 
     player.unload()
     expect(player.canPlay.value).toBe(false)
@@ -159,42 +152,108 @@ describe('usePlayer', () => {
     expect(player.getStepResult('tap-1')?.status).toBe('failed')
   })
 
-  it('tap 支持 xpath 定位成功/失败降级坐标', async () => {
+  it('tap xpath 使用后端 clickElement API，失败即失败', async () => {
     const player = createPlayer({ width: 100, height: 200 })
 
-    getHierarchyMock.mockResolvedValueOnce({
-      nodes: [
-        {
-          xpath: '//App/Button[1]',
-          bounds: [0, 0, 10, 20],
-          children: [],
-        },
-      ],
-    } as any)
+    // 1) XPath 成功：后端 clickElement 返回成功
+    sendCommandMock.mockResolvedValueOnce(undefined)
 
-    const xpathTap = {
-      ...baseAction('tap-xpath'),
+    const successTap = {
+      ...baseAction('tap-success'),
       type: 'tap',
-      xpath: { selector: '//App/Button[1]', fallbackCoords: { x: 1, y: 2 } },
-      coords: { x: 1, y: 2, scaleX: 0.01, scaleY: 0.01 },
+      xpath: { selector: '//button[@text="Submit"]' },
       params: { x: 1, y: 2 },
     }
 
-    // getHierarchy 抛错 -> findElementByXPath catch -> 降级走 coords
-    getHierarchyMock.mockRejectedValueOnce(new Error('hierarchy-down'))
-    const fallbackTap = {
-      ...baseAction('tap-fallback'),
+    // 2) XPath 失败：直接抛出错误，不降级坐标
+    sendCommandMock.mockRejectedValueOnce(new Error('element not found'))
+
+    const failedTap = {
+      ...baseAction('tap-failed'),
       type: 'tap',
-      xpath: { selector: '//Missing', fallbackCoords: { x: 20, y: 30 } },
-      coords: { x: 20, y: 30, scaleX: 0.2, scaleY: 0.15 },
+      xpath: { selector: '//missing' },
       params: { x: 20, y: 30 },
     }
 
-    player.load(createRecording([xpathTap, fallbackTap]))
+    player.load(createRecording([successTap, failedTap]))
     await player.play()
 
-    expect(tapMock).toHaveBeenNthCalledWith(1, 'android', 'serial-1', 5, 10)
-    expect(tapMock).toHaveBeenNthCalledWith(2, 'android', 'serial-1', 20, 30)
+    // 第一个步骤成功（调用 clickElement）
+    expect(sendCommandMock).toHaveBeenNthCalledWith(1, 'android', 'serial-1', 'clickElement', {
+      by: 'xpath',
+      value: '//button[@text="Submit"]',
+      timeout: 3,
+    })
+    expect(player.getStepResult('tap-success')?.status).toBe('success')
+
+    // 第二个步骤失败（XPath 失败，直接报错）
+    expect(sendCommandMock).toHaveBeenNthCalledWith(2, 'android', 'serial-1', 'clickElement', {
+      by: 'xpath',
+      value: '//missing',
+      timeout: 3,
+    })
+    expect(player.getStepResult('tap-failed')?.status).toBe('failed')
+    expect(player.getStepResult('tap-failed')?.error).toContain('element not found')
+    expect(player.state.value).toBe('error')
+    // 不应该调用 tap (不降级坐标)
+    expect(tapMock).not.toHaveBeenCalled()
+  })
+
+  it('坐标字段缺失/非 Error rejection 也能按 continue 继续回放', async () => {
+    const player = createPlayer({ width: 100, height: 200 })
+
+    // xpath 查找失败 -> clickElement 抛错（不降级坐标）
+    sendCommandMock.mockRejectedValueOnce(new Error('element not found'))
+    const xpathNoCoords: any = {
+      ...baseAction('t1', { onFailure: 'continue' }),
+      type: 'tap',
+      xpath: { selector: '//missing' },
+      params: { x: 1, y: 2 },
+      // 有XPath时不记录coords
+    }
+
+    // 无 xpath 且缺 coords -> 抛错
+    const noCoords: any = {
+      ...baseAction('t2', { onFailure: 'continue' }),
+      type: 'tap',
+      params: { x: 1, y: 2 },
+      coords: undefined,
+    }
+
+    // swipe 缺 endCoords -> 抛错
+    const swipeMissingEnd: any = {
+      ...baseAction('s1', { onFailure: 'continue' }),
+      type: 'swipe',
+      coords: { x: 0, y: 0, scaleX: 0.1, scaleY: 0.1 },
+      endCoords: undefined,
+      params: {},
+    }
+
+    // tap API reject 非 Error -> errorMsg 走 String(err)
+    tapMock.mockRejectedValueOnce('boom')
+    const tapRejectString = {
+      ...baseAction('t3', { onFailure: 'continue' }),
+      type: 'tap',
+      coords: { x: 0, y: 0, scaleX: 0.1, scaleY: 0.1 },
+      params: { x: 0, y: 0 },
+    }
+
+    const after = {
+      ...baseAction('after'),
+      type: 'command',
+      params: { command: 'after' },
+    }
+
+    player.load(createRecording([xpathNoCoords, noCoords, swipeMissingEnd, tapRejectString, after]))
+    await player.play()
+
+    expect(player.state.value).toBe('idle')
+    expect(player.error.value).toBeNull()
+    expect(player.getStepResult('t1')?.status).toBe('failed')
+    expect(player.getStepResult('t2')?.status).toBe('failed')
+    expect(player.getStepResult('s1')?.status).toBe('failed')
+    expect(player.getStepResult('t3')?.error).toBe('boom')
+    expect(player.getStepResult('after')?.status).toBe('success')
   })
 
   it('swipe/input/sleep/back/home/command/assert/default 分支跑通', async () => {
@@ -286,7 +345,7 @@ describe('usePlayer', () => {
     // 1) 执行失败：tap 失败，全局 continue 覆盖步骤 stop
     tapMock.mockRejectedValueOnce(new Error('tap-fail'))
     const execFail = {
-      ...baseAction('e1', { onExecuteFailure: 'stop' }),
+      ...baseAction('e1', { onFailure: 'stop' }),
       type: 'tap',
       coords: { x: 0, y: 0, scaleX: 0.1, scaleY: 0.1 },
       params: { x: 0, y: 0 },
@@ -298,7 +357,7 @@ describe('usePlayer', () => {
     }
 
     const file1 = createRecording([execFail, execAfter])
-    file1.config.globalFailureControl = { enabled: true, onExecuteFailure: 'continue', onAssertFailure: 'stop' }
+    file1.config.globalFailureControl = { enabled: true, onFailure: 'continue' }
     player.load(file1)
 
     await player.play()
@@ -317,7 +376,7 @@ describe('usePlayer', () => {
     } as any)
 
     const assertFail = {
-      ...baseAction('a1', { onAssertFailure: 'continue' }),
+      ...baseAction('a1', { onFailure: 'continue' }),
       type: 'assert',
       params: { operator: 'and', conditions: [] },
     }
@@ -328,7 +387,7 @@ describe('usePlayer', () => {
     }
 
     const file2 = createRecording([assertFail, assertAfter])
-    file2.config.globalFailureControl = { enabled: true, onExecuteFailure: 'stop', onAssertFailure: 'stop' }
+    file2.config.globalFailureControl = { enabled: true, onFailure: 'stop' }
     player.load(file2)
 
     await player.play()
@@ -339,12 +398,12 @@ describe('usePlayer', () => {
     expect(logSpy).toHaveBeenCalledWith('失败截图:', 'data:image/jpeg;base64,abcd')
   })
 
-  it('断言 API 抛错属于执行失败，应使用 onExecuteFailure', async () => {
+  it('断言 API 抛错属于执行失败，应使用 onFailure', async () => {
     const player = createPlayer({ width: 100, height: 200 })
 
     assertCombinedMock.mockRejectedValueOnce(new Error('api-down'))
     const assertAction = {
-      ...baseAction('as-err', { onExecuteFailure: 'continue', onAssertFailure: 'stop' }),
+      ...baseAction('as-err', { onFailure: 'continue' }),
       type: 'assert',
       params: { operator: 'and', conditions: [] },
     }
@@ -362,16 +421,117 @@ describe('usePlayer', () => {
     expect(player.getStepResult('after')?.status).toBe('success')
   })
 
-  it('updateGlobalFailureControl 会写回 recording.config', () => {
-    const player = createPlayer()
-    player.load(createRecording([]))
+  it('断言失败在全局关闭时遵循步骤 onFailure', async () => {
+    const player = createPlayer({ width: 100, height: 200 })
 
-    player.updateGlobalFailureControl({ enabled: true, onExecuteFailure: 'continue' })
+    assertCombinedMock.mockResolvedValueOnce({ success: false, message: 'nope' } as any)
+    const assertFail = {
+      ...baseAction('as1', { onFailure: 'continue' }),
+      type: 'assert',
+      params: { operator: 'and', conditions: [] },
+    }
+    const after = {
+      ...baseAction('after'),
+      type: 'command',
+      params: { command: 'after' },
+    }
+
+    player.load(createRecording([assertFail, after]))
+    await player.play()
+
+    expect(player.state.value).toBe('idle')
+    expect(player.getStepResult('as1')?.status).toBe('failed')
+    expect(player.getStepResult('after')?.status).toBe('success')
+  })
+
+  it('updateGlobalFailureControl 支持无录制/缺字段/部分更新', () => {
+    const player = createPlayer()
+
+    // 无录制也不应炸
+    player.updateGlobalFailureControl({ enabled: true })
+
+    // 手动塞一个缺 globalFailureControl 的 recording，覆盖补齐分支
+    player.recording.value = createRecording([]) as any
+    delete (player.recording.value as any).config.globalFailureControl
+
+    // 仅更新 onFailure（enabled 都走 ?? 回退）
+    player.updateGlobalFailureControl({ onFailure: 'continue' })
+    expect(player.recording.value?.config.globalFailureControl).toEqual({
+      enabled: false,
+      onFailure: 'continue',
+    })
+
+    // 再次更新其它字段
+    player.updateGlobalFailureControl({ enabled: true, onFailure: 'stop' })
     expect(player.recording.value?.config.globalFailureControl).toEqual({
       enabled: true,
-      onExecuteFailure: 'continue',
-      onAssertFailure: 'stop',
+      onFailure: 'stop',
     })
+  })
+
+  it('waitAfter 期间 pause 会在 sleep 后中断循环', async () => {
+    const player = createPlayer({ width: 100, height: 200 })
+
+    const a1 = { ...baseAction('c1', { waitAfter: 50 }), type: 'command', params: { command: 'c1' } }
+    const a2 = { ...baseAction('c2'), type: 'command', params: { command: 'c2' } }
+    player.load(createRecording([a1, a2]))
+
+    const playPromise = player.play()
+    await Promise.resolve()
+    player.pause()
+    await vi.advanceTimersByTimeAsync(50)
+    await playPromise
+
+    expect(player.state.value).toBe('paused')
+    expect(player.currentIndex.value).toBe(0)
+    expect(player.getStepResult('c1')?.status).toBe('success')
+    expect(player.getStepResult('c2')).toBeUndefined()
+  })
+
+  it('从 paused 恢复时会跳过已完成步骤，避免重复执行', async () => {
+    const player = createPlayer({ width: 100, height: 200 })
+
+    const actions = [
+      { ...baseAction('c1'), type: 'command', params: { command: 'c1' } },
+      { ...baseAction('c2'), type: 'command', params: { command: 'c2' } },
+    ]
+    player.load(createRecording(actions))
+
+    const first = player.play()
+    player.pause()
+    await first
+
+    expect(player.state.value).toBe('paused')
+    expect(player.currentIndex.value).toBe(0)
+    expect(player.getStepResult('c1')?.status).toBe('success')
+
+    await player.play()
+    expect(player.state.value).toBe('idle')
+    expect(player.getStepResult('c2')?.status).toBe('success')
+  })
+
+  it('stepNext 越界/无录制会直接返回，失败会进入 error', async () => {
+    const player = createPlayer({ width: 100, height: 200 })
+
+    await player.stepNext()
+    expect(sendCommandMock).not.toHaveBeenCalled()
+
+    player.load(createRecording([{ ...baseAction('only'), type: 'command', params: { command: 'only' } }]))
+    player.currentIndex.value = 0
+    await player.stepNext()
+    expect(sendCommandMock).not.toHaveBeenCalled()
+
+    tapMock.mockRejectedValueOnce(new Error('tap-fail'))
+    const badTap = {
+      ...baseAction('bad'),
+      type: 'tap',
+      coords: { x: 0, y: 0, scaleX: 0.1, scaleY: 0.1 },
+      params: { x: 0, y: 0 },
+    }
+    player.load(createRecording([badTap]))
+    await player.stepNext()
+    expect(player.state.value).toBe('error')
+    expect(player.error.value).toBe('tap-fail')
   })
 
   it('pause/stop/seekTo/stepNext/setSpeed 分支覆盖', async () => {
@@ -415,4 +575,3 @@ describe('usePlayer', () => {
     expect(player.error.value).toBe('没有可回放的录制')
   })
 })
-

@@ -1,5 +1,5 @@
 <template>
-  <n-modal v-model:show="visible" preset="dialog" :title="dialogTitle">
+  <n-modal v-model:show="visible" preset="dialog" :title="dialogTitle" :style="{ width: '700px', maxWidth: '90vw' }">
     <div class="assert-config">
       <!-- 断言描述 -->
       <n-form-item label="描述（可选）">
@@ -22,11 +22,27 @@
       <n-form-item label="断言条件">
         <div class="conditions-list">
           <div v-for="(condition, index) in conditions" :key="index" class="condition-item">
-            <n-tag :type="getConditionTypeColor(condition.type)">
+            <n-tag :type="getConditionTypeColor(condition.type)" size="small">
               {{ condition.type === 'element' ? '元素' : '图片' }}
             </n-tag>
-            <span class="condition-summary">{{ formatCondition(condition) }}</span>
-            <n-button size="small" @click="removeCondition(index)">删除</n-button>
+            <n-tag
+              :type="getExpectTypeColor(condition.expect)"
+              size="small"
+              :bordered="false"
+              class="expect-tag clickable"
+              @click="toggleExpect(index)"
+            >
+              {{ condition.expect === 'exists' ? '✓ 存在' : '✗ 不存在' }}
+            </n-tag>
+            <n-tooltip placement="top" :delay="300">
+              <template #trigger>
+                <span class="condition-summary">{{ getConditionSelector(condition) }}</span>
+              </template>
+              {{ getConditionSelector(condition) }}
+            </n-tooltip>
+            <n-space :size="4">
+              <n-button size="small" @click="removeCondition(index)">删除</n-button>
+            </n-space>
           </div>
         </div>
       </n-form-item>
@@ -57,14 +73,12 @@
       </div>
 
       <!-- 失败行为配置 -->
-      <n-divider title-placement="left">{{ t.actions.failureControl }}</n-divider>
-      <div class="failure-config-row" style="display: flex; gap: 16px;">
-        <n-form-item :label="t.actions.onExecuteFailure" style="flex: 1;">
-          <n-select v-model:value="onExecuteFailure" :options="failureOptions" />
-        </n-form-item>
-        <n-form-item :label="t.actions.onAssertFailure" style="flex: 1;">
-          <n-select v-model:value="onAssertFailure" :options="failureOptions" />
-        </n-form-item>
+      <n-divider title-placement="left">{{ t.actions.failureControl.title }}</n-divider>
+      <div class="failure-config-row">
+        <div class="failure-toggle-row">
+          <span class="failure-label">执行失败时停止回放</span>
+          <n-switch v-model:value="stopOnFailure" />
+        </div>
       </div>
 
     </div>
@@ -95,6 +109,7 @@ import {
   NInput,
   NSelect,
   NDivider,
+  NTooltip,
 } from 'naive-ui'
 import type { AssertCondition, AssertParams, RecordedAction, FailureBehavior } from '@/types/recording'
 import { DEFAULT_TIMEOUT_MS, DEFAULT_INTERVAL_MS } from '@/constants/assertion'
@@ -113,14 +128,9 @@ const conditions = ref<AssertCondition[]>([])
 const waitEnabled = ref(false)
 const waitTimeout = ref(DEFAULT_TIMEOUT_MS)
 const waitInterval = ref(DEFAULT_INTERVAL_MS)
-const onExecuteFailure = ref<FailureBehavior>('stop')
-const onAssertFailure = ref<FailureBehavior>('stop')
 
-// 失败选项
-const failureOptions = computed(() => [
-  { label: t.value.actions.stop, value: 'stop' },
-  { label: t.value.actions.continue, value: 'continue' },
-])
+// 失败控制: true = 停止回放 (stop), false = 继续执行 (continue)
+const stopOnFailure = ref(true)
 
 // 编辑模式状态
 const editMode = ref(false)
@@ -130,7 +140,7 @@ const editingActionId = ref<string | null>(null)
 const dialogTitle = computed(() => editMode.value ? '编辑断言' : '配置断言')
 
 const emit = defineEmits<{
-  confirm: [params: AssertParams, failureConfig: { onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }]
+  confirm: [params: AssertParams, onFailure?: FailureBehavior]
   update: [id: string, updates: Partial<RecordedAction>]
   'add-element': []
   'add-image': []
@@ -154,8 +164,7 @@ function reset() {
   waitEnabled.value = false
   waitTimeout.value = DEFAULT_TIMEOUT_MS
   waitInterval.value = DEFAULT_INTERVAL_MS
-  onExecuteFailure.value = 'stop'
-  onAssertFailure.value = 'stop'
+  stopOnFailure.value = true
   editMode.value = false
   editingActionId.value = null
 }
@@ -177,8 +186,7 @@ function edit(action: RecordedAction) {
   waitEnabled.value = params.wait?.enabled ?? false
   waitTimeout.value = params.wait?.timeout ?? DEFAULT_TIMEOUT_MS
   waitInterval.value = params.wait?.interval ?? DEFAULT_INTERVAL_MS
-  onExecuteFailure.value = action.onExecuteFailure || 'stop'
-  onAssertFailure.value = action.onAssertFailure || 'stop'
+  stopOnFailure.value = (action.onFailure || 'stop') === 'stop'
 
   visible.value = true
 }
@@ -199,6 +207,16 @@ function removeCondition(index: number) {
   conditions.value.splice(index, 1)
 }
 
+/**
+ * 切换条件的期望状态（存在 <-> 不存在）
+ */
+function toggleExpect(index: number) {
+  const condition = conditions.value[index]
+  if (condition) {
+    condition.expect = condition.expect === 'exists' ? 'not_exists' : 'exists'
+  }
+}
+
 function formatCondition(condition: AssertCondition): string {
   if (condition.type === 'element') {
     const expectText = condition.expect === 'exists' ? '存在' : '不存在'
@@ -208,6 +226,24 @@ function formatCondition(condition: AssertCondition): string {
     const name = condition.template.name || '模板图片'
     return `${name} ${expectText}`
   }
+}
+
+/**
+ * 获取条件选择器部分（不包含存在/不存在）
+ */
+function getConditionSelector(condition: AssertCondition): string {
+  if (condition.type === 'element') {
+    return condition.selector.xpath
+  } else {
+    return condition.template.name || '模板图片'
+  }
+}
+
+/**
+ * 获取期望类型的颜色标签
+ */
+function getExpectTypeColor(expect: 'exists' | 'not_exists'): 'success' | 'error' {
+  return expect === 'exists' ? 'success' : 'error'
 }
 
 function getConditionTypeColor(type: string) {
@@ -233,18 +269,16 @@ function handleConfirm() {
       : undefined,
   }
 
+  const onFailure: FailureBehavior = stopOnFailure.value ? 'stop' : 'continue'
+
   if (editMode.value && editingActionId.value) {
     const updates: Partial<RecordedAction> = {
       params,
-      onExecuteFailure: onExecuteFailure.value,
-      onAssertFailure: onAssertFailure.value,
+      onFailure,
     }
     emit('update', editingActionId.value, updates)
   } else {
-    emit('confirm', params, {
-      onExecuteFailure: onExecuteFailure.value,
-      onAssertFailure: onAssertFailure.value,
-    })
+    emit('confirm', params, onFailure)
   }
 
   hide()
@@ -275,11 +309,37 @@ defineExpose({ show, hide, addCondition, edit, reset })
   border-radius: 4px;
 }
 
+.expect-tag.clickable {
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.expect-tag.clickable:hover {
+  opacity: 0.8;
+  transform: scale(1.05);
+}
+
+.expect-tag.clickable:active {
+  transform: scale(0.95);
+}
+
 .condition-summary {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: help;
+  color: var(--n-text-color);
+  font-family: monospace;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  transition: background-color 0.2s;
+}
+
+.condition-summary:hover {
+  background-color: var(--n-color-embedded-popover);
 }
 
 .wait-config-section {
@@ -304,5 +364,23 @@ defineExpose({ show, hide, addCondition, edit, reset })
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--n-border-color);
+}
+
+.failure-config-row {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--n-color-embedded);
+  border-radius: 8px;
+}
+
+.failure-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.failure-label {
+  font-weight: 500;
+  color: var(--n-text-color);
 }
 </style>

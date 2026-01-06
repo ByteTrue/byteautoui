@@ -96,26 +96,10 @@
             <template #unchecked>{{ t.failureControl.globalSwitch }}</template>
           </n-switch>
         </div>
-        
-        <div v-if="isGlobalControlEnabled" class="control-options">
-          <div class="option-item">
-            <span class="option-label">{{ t.failureControl.onExecute }}:</span>
-            <n-select 
-              v-model:value="globalOnExecuteFailure" 
-              :options="failureBehaviorOptions" 
-              size="tiny" 
-              class="behavior-select"
-            />
-          </div>
-          <div class="option-item">
-            <span class="option-label">{{ t.failureControl.onAssert }}:</span>
-            <n-select 
-              v-model:value="globalOnAssertFailure" 
-              :options="failureBehaviorOptions" 
-              size="tiny" 
-              class="behavior-select"
-            />
-          </div>
+
+        <div v-if="isGlobalControlEnabled" class="control-toggle">
+          <span class="toggle-label">执行失败时停止回放</span>
+          <n-switch v-model:value="globalStopOnFailure" />
         </div>
       </div>
     </div>
@@ -216,12 +200,6 @@ const emit = defineEmits<{
   'delete-recording': [group: string, name: string]
 }>()
 
-// 失败行为选项
-const failureBehaviorOptions = computed(() => [
-  { label: props.t.failureControl.continue, value: 'continue' },
-  { label: props.t.failureControl.stop, value: 'stop' },
-])
-
 // 全局控制开关
 const isGlobalControlEnabled = computed({
   get: () => props.player.recording.value?.config.globalFailureControl?.enabled ?? false,
@@ -230,8 +208,7 @@ const isGlobalControlEnabled = computed({
     if (!props.player.recording.value.config.globalFailureControl) {
       props.player.recording.value.config.globalFailureControl = {
         enabled: val,
-        onExecuteFailure: 'stop',
-        onAssertFailure: 'stop',
+        onFailure: 'stop',
       }
     } else {
       props.player.recording.value.config.globalFailureControl.enabled = val
@@ -239,22 +216,12 @@ const isGlobalControlEnabled = computed({
   },
 })
 
-// 执行失败行为
-const globalOnExecuteFailure = computed({
-  get: () => props.player.recording.value?.config.globalFailureControl?.onExecuteFailure ?? 'stop',
-  set: (val: FailureBehavior) => {
+// 全局失败行为: true = 停止回放 (stop), false = 继续执行 (continue)
+const globalStopOnFailure = computed({
+  get: () => (props.player.recording.value?.config.globalFailureControl?.onFailure ?? 'stop') === 'stop',
+  set: (val: boolean) => {
     if (props.player.recording.value?.config.globalFailureControl) {
-      props.player.recording.value.config.globalFailureControl.onExecuteFailure = val
-    }
-  },
-})
-
-// 断言失败行为
-const globalOnAssertFailure = computed({
-  get: () => props.player.recording.value?.config.globalFailureControl?.onAssertFailure ?? 'stop',
-  set: (val: FailureBehavior) => {
-    if (props.player.recording.value?.config.globalFailureControl) {
-      props.player.recording.value.config.globalFailureControl.onAssertFailure = val
+      props.player.recording.value.config.globalFailureControl.onFailure = val ? 'stop' : 'continue'
     }
   },
 })
@@ -494,30 +461,19 @@ function getAssertResultTag(action: RecordedAction): { text: string; type: 'succ
   font-weight: 500;
 }
 
-.control-options {
+.control-toggle {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed var(--n-divider-color);
   display: flex;
-  gap: 16px;
-}
-
-.option-item {
-  flex: 1;
-  display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  justify-content: space-between;
 }
 
-.option-label {
-  color: var(--n-text-color-3);
-  white-space: nowrap;
-}
-
-.behavior-select {
-  flex: 1;
-  min-width: 100px;
+.toggle-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--n-text-color);
 }
 
 .playback-steps-section {

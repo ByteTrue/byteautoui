@@ -1,6 +1,6 @@
 import { ref, computed, type ComputedRef } from 'vue'
 import type { Platform } from '@/api/types'
-import { tap, sendCommand, getHierarchy, assertCombined, type AssertCombinedRequest } from '@/api'
+import { tap, sendCommand, assertCombined, type AssertCombinedRequest } from '@/api'
 import type {
   RecordingFile,
   RecordedAction,
@@ -11,6 +11,20 @@ import type {
   StepResult,
 } from '@/types/recording'
 
+/**
+ * 自定义断言失败错误，包含截图信息
+ */
+class AssertionFailureError extends Error {
+  constructor(
+    message: string,
+    public screenshot?: string,
+    public details?: Record<string, unknown>
+  ) {
+    super(message)
+    this.name = 'AssertionFailureError'
+  }
+}
+
 const DEFAULT_FAILURE_BEHAVIOR: FailureBehavior = 'stop'
 
 function normalizeFailureBehavior(value: unknown): FailureBehavior {
@@ -19,26 +33,10 @@ function normalizeFailureBehavior(value: unknown): FailureBehavior {
 
 const DEFAULT_GLOBAL_FAILURE_CONTROL = {
   enabled: false,
-  onExecuteFailure: DEFAULT_FAILURE_BEHAVIOR,
-  onAssertFailure: DEFAULT_FAILURE_BEHAVIOR,
+  onFailure: DEFAULT_FAILURE_BEHAVIOR,
 } as const satisfies {
   enabled: boolean
-  onExecuteFailure: FailureBehavior
-  onAssertFailure: FailureBehavior
-}
-
-type FailureKind = 'execute' | 'assert'
-
-class AssertFailureError extends Error {
-  public readonly details?: unknown
-  public readonly screenshot?: string
-
-  constructor(message: string, details?: unknown, screenshot?: string) {
-    super(message)
-    this.name = 'AssertFailureError'
-    this.details = details
-    this.screenshot = screenshot
-  }
+  onFailure: FailureBehavior
 }
 
 /**
@@ -108,28 +106,24 @@ export function usePlayer(
 
     // 规范化，避免脏数据把回放逻辑搞崩
     existing.enabled = Boolean(existing.enabled)
-    existing.onExecuteFailure = normalizeFailureBehavior(existing.onExecuteFailure)
-    existing.onAssertFailure = normalizeFailureBehavior(existing.onAssertFailure)
+    existing.onFailure = normalizeFailureBehavior(existing.onFailure)
     return existing
   }
 
-  function getEffectiveFailureBehavior(action: RecordedAction, kind: FailureKind): FailureBehavior {
+  function getEffectiveFailureBehavior(action: RecordedAction): FailureBehavior {
     const global = getOrInitGlobalFailureControl()
     if (global.enabled) {
-      return kind === 'execute' ? global.onExecuteFailure : global.onAssertFailure
+      return global.onFailure
     }
-    return kind === 'execute'
-      ? normalizeFailureBehavior(action.onExecuteFailure)
-      : normalizeFailureBehavior(action.onAssertFailure)
+    return normalizeFailureBehavior(action.onFailure)
   }
 
   function updateGlobalFailureControl(
-    updates: Partial<{ enabled: boolean; onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }>
+    updates: Partial<{ enabled: boolean; onFailure: FailureBehavior }>
   ) {
     const current = getOrInitGlobalFailureControl()
     current.enabled = updates.enabled ?? current.enabled
-    current.onExecuteFailure = updates.onExecuteFailure ?? current.onExecuteFailure
-    current.onAssertFailure = updates.onAssertFailure ?? current.onAssertFailure
+    current.onFailure = updates.onFailure ?? current.onFailure
   }
 
   function normalizeRecordingForPlayback(file: RecordingFile): RecordingFile {
@@ -138,18 +132,14 @@ export function usePlayer(
       file.config.globalFailureControl = { ...DEFAULT_GLOBAL_FAILURE_CONTROL }
     } else {
       file.config.globalFailureControl.enabled = Boolean(file.config.globalFailureControl.enabled)
-      file.config.globalFailureControl.onExecuteFailure = normalizeFailureBehavior(
-        file.config.globalFailureControl.onExecuteFailure
-      )
-      file.config.globalFailureControl.onAssertFailure = normalizeFailureBehavior(
-        file.config.globalFailureControl.onAssertFailure
+      file.config.globalFailureControl.onFailure = normalizeFailureBehavior(
+        file.config.globalFailureControl.onFailure
       )
     }
 
     // 补齐步骤级字段（向后兼容：老录制文件可能缺字段）
     for (const action of file.actions) {
-      ;(action as any).onExecuteFailure = normalizeFailureBehavior((action as any).onExecuteFailure)
-      ;(action as any).onAssertFailure = normalizeFailureBehavior((action as any).onAssertFailure)
+      ;(action as any).onFailure = normalizeFailureBehavior((action as any).onFailure)
     }
 
     return file
@@ -199,79 +189,26 @@ export function usePlayer(
   }
 
   /**
-   * 通过XPath查找元素并获取中心坐标
-   */
-  async function findElementByXPath(xpath: string): Promise<{ x: number; y: number } | null> {
-    try {
-      // 获取当前UI层级
-      const hierarchy = await getHierarchy(platform, serial)
-
-      // 遍历查找xpath匹配的节点
-      function findNode(nodes: any[]): any {
-        for (const node of nodes) {
-          if (node.xpath === xpath) {
-            return node
-          }
-          if (node.children) {
-            const found = findNode(node.children)
-            if (found) return found
-          }
-        }
-        return null
-      }
-
-      const node = findNode(hierarchy.nodes)
-      if (!node || !node.bounds) return null
-
-      // 计算中心点
-      const [x1, y1, x2, y2] = node.bounds
-      return {
-        x: Math.round((x1 + x2) / 2),
-        y: Math.round((y1 + y2) / 2),
-      }
-    } catch (e) {
-      console.error('XPath查找失败:', e)
-      return null
-    }
-  }
-
-  /**
    * 执行单个操作
    */
   async function executeAction(action: RecordedAction): Promise<void> {
     switch (action.type) {
       case 'tap': {
-        let finalX: number
-        let finalY: number
-
-        // 如果录制时记录了xpath，优先尝试使用xpath定位
+        // 如果录制时记录了 xpath，使用后端的 clickElement API
         if (action.xpath) {
-          const coords = await findElementByXPath(action.xpath.selector)
-          if (coords) {
-            // XPath定位成功
-            finalX = coords.x
-            finalY = coords.y
-          } else {
-            // XPath定位失败，降级使用坐标
-            console.warn('XPath查找失败，降级使用比例缩放坐标:', action.xpath.selector)
-            if (!action.coords) {
-              throw new Error('Tap操作缺少坐标信息')
-            }
-            const scaled = scaleCoordinates(action.coords)
-            finalX = scaled.x
-            finalY = scaled.y
-          }
+          await sendCommand(platform, serial, 'clickElement', {
+            by: 'xpath',
+            value: action.xpath.selector,
+            timeout: 3,  // 3秒超时
+          })
         } else {
-          // 录制时未记录xpath，直接使用坐标
+          // 录制时未记录 xpath，直接使用坐标
           if (!action.coords) {
             throw new Error('Tap操作缺少坐标信息')
           }
           const scaled = scaleCoordinates(action.coords)
-          finalX = scaled.x
-          finalY = scaled.y
+          await tap(platform, serial, scaled.x, scaled.y)
         }
-
-        await tap(platform, serial, finalX, finalY)
         break
       }
 
@@ -351,10 +288,10 @@ export function usePlayer(
         // 调用断言 API
         const result = await assertCombined(platform, serial, request)
 
-        // 如果断言失败，交由上层决定 continue/stop
+        // 如果断言失败，抛出包含截图的自定义错误
         if (!result.success) {
           const errorMsg = `断言失败: ${result.message}`
-          throw new AssertFailureError(errorMsg, result.details, result.screenshot)
+          throw new AssertionFailureError(errorMsg, result.screenshot, result.details)
         }
 
         break
@@ -419,24 +356,25 @@ export function usePlayer(
         const duration = Date.now() - startTime
         setStepResult(action.id, { status: 'success', duration })
       } catch (err) {
-        const failureKind: FailureKind = err instanceof AssertFailureError ? 'assert' : 'execute'
         const duration = Date.now() - startTime
         const errorMsg = err instanceof Error ? err.message : String(err)
         setStepResult(action.id, { status: 'failed', error: errorMsg, duration })
 
-        const behavior = getEffectiveFailureBehavior(action, failureKind)
+        // 如果是断言失败且有截图，输出失败截图
+        if (err instanceof AssertionFailureError && err.screenshot) {
+          console.log('失败截图:', `data:image/jpeg;base64,${err.screenshot}`)
+        }
+
+        const behavior = getEffectiveFailureBehavior(action)
 
         if (behavior === 'stop') {
           error.value = errorMsg
           state.value = 'error'
           console.error(`回放失败在步骤 ${currentIndex.value}:`, err)
-          if (err instanceof AssertFailureError && err.screenshot) {
-            console.log('失败截图:', `data:image/jpeg;base64,${err.screenshot}`)
-          }
           break
         }
 
-        console.warn(`步骤失败但继续回放(步骤 ${currentIndex.value}, ${failureKind} failure):`, err)
+        console.warn(`步骤失败但继续回放(步骤 ${currentIndex.value}):`, err)
       }
 
       // 再次检查状态（executeAction可能很耗时）

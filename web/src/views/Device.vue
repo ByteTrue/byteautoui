@@ -628,12 +628,9 @@ function handleImageConditionConfirm(condition: ImageCondition) {
 }
 
 // 断言参数确认
-function handleAssertParamsConfirm(
-  params: AssertParams,
-  failureConfig?: { onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }
-) {
+function handleAssertParamsConfirm(params: AssertParams, onFailure?: FailureBehavior) {
   // 录制断言动作
-  actionsPanelRef.value?.recordAssert(params, failureConfig)
+  actionsPanelRef.value?.recordAssert(params, onFailure)
   message.success('断言已添加')
 }
 

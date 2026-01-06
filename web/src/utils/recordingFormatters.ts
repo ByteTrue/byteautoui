@@ -75,47 +75,72 @@ export function formatElementDesc(element: ElementInfo | undefined): string | nu
  * 格式化操作参数
  */
 export function formatActionParams(action: RecordedAction): string {
-  switch (action.type) {
-    case 'tap': {
-      const desc = formatElementDesc(action.element)
-      if (desc) return desc
-      if (action.xpath) {
-        return `XPath元素 (${Math.round(action.coords!.x)}, ${Math.round(action.coords!.y)})`
+  try {
+    switch (action.type) {
+      case 'tap': {
+        const desc = formatElementDesc(action.element)
+        if (desc) return desc
+        if (action.xpath) {
+          const coords = action.coords
+          if (coords) {
+            return `XPath元素 (${Math.round(coords.x)}, ${Math.round(coords.y)})`
+          }
+          return `XPath元素`
+        }
+        if (action.coords) {
+          return `坐标 (${Math.round(action.coords.x)}, ${Math.round(action.coords.y)})`
+        }
+        return '点击'
       }
-      return `坐标 (${Math.round(action.coords!.x)}, ${Math.round(action.coords!.y)})`
-    }
-    case 'swipe': {
-      const elementDesc = formatElementDesc(action.element)
-      if (elementDesc) {
-        return `${elementDesc} → (${Math.round(action.endCoords!.x)}, ${Math.round(action.endCoords!.y)})`
+      case 'swipe': {
+        const elementDesc = formatElementDesc(action.element)
+        if (elementDesc) {
+          if (action.endCoords) {
+            return `${elementDesc} → (${Math.round(action.endCoords.x)}, ${Math.round(action.endCoords.y)})`
+          }
+          return elementDesc
+        }
+        if (action.coords && action.endCoords) {
+          return `(${Math.round(action.coords.x)}, ${Math.round(action.coords.y)}) → (${Math.round(action.endCoords.x)}, ${Math.round(action.endCoords.y)})`
+        }
+        return '滑动'
       }
-      return `(${Math.round(action.coords!.x)}, ${Math.round(action.coords!.y)}) → (${Math.round(action.endCoords!.x)}, ${Math.round(action.endCoords!.y)})`
-    }
-    case 'input': {
-      const params = action.params as { text: string }
-      return `"${params.text}"`
-    }
-    case 'sleep': {
-      const params = action.params as { duration: number }
-      return `${params.duration}ms`
-    }
-    case 'command': {
-      const params = action.params as { command: string }
-      return params.command
-    }
-    case 'assert': {
-      const params = action.params as AssertParams
-      // 优先显示用户自定义描述
-      if (params.description) {
-        return params.description
+      case 'input': {
+        const params = action.params as { text: string }
+        return params?.text ? `"${params.text}"` : '输入'
       }
-      // 默认显示条件数量和运算符
-      const count = params.conditions.length
-      const op = params.operator.toUpperCase()
-      return `${count}个条件 (${op})`
+      case 'sleep': {
+        const params = action.params as { duration: number }
+        return params?.duration ? `${params.duration}ms` : '等待'
+      }
+      case 'command': {
+        const params = action.params as { command: string }
+        return params?.command || '命令'
+      }
+      case 'assert': {
+        const params = action.params as AssertParams
+        // 优先显示用户自定义描述
+        if (params?.description) {
+          return params.description
+        }
+        // 默认显示条件数量和运算符
+        if (params?.conditions) {
+          const count = params.conditions.length
+          const op = params.operator?.toUpperCase() || 'AND'
+          return `${count}个条件 (${op})`
+        }
+        return '断言'
+      }
+      case 'back':
+        return '返回'
+      case 'home':
+        return '主页'
+      default:
+        return action.params ? JSON.stringify(action.params) : action.type || '未知操作'
     }
-    default:
-      return JSON.stringify(action.params)
+  } catch (error) {
+    console.error('formatActionParams error:', error, action)
+    return `${action.type || '未知'} (格式化错误)`
   }
 }
 

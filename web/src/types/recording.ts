@@ -11,8 +11,7 @@ export interface RecordingConfig {
   recordElementDetails: boolean // 是否记录元素详细信息
   globalFailureControl?: {
     enabled: boolean
-    onExecuteFailure: FailureBehavior
-    onAssertFailure: FailureBehavior
+    onFailure: FailureBehavior
   }
 }
 
@@ -31,7 +30,6 @@ export interface CoordinateInfo {
  */
 export interface XPathInfo {
   selector: string // 完整XPath表达式
-  fallbackCoords: { x: number; y: number } // XPath失败时的降级坐标
 }
 
 /**
@@ -165,15 +163,14 @@ export interface BaseAction {
   timestamp: number
   relativeTime: number       // 相对于录制开始的时间（内部使用）
   waitAfter: number          // 完成后等待时间（毫秒），用于UI显示和编辑
-  onExecuteFailure: FailureBehavior
-  onAssertFailure: FailureBehavior
+  onFailure: FailureBehavior // 失败时的行为(执行失败或断言失败统一处理)
   screenshot?: string
 }
 
-// Tap操作 - 必须有coords，可选xpath和element
+// Tap操作 - coords可选(有xpath时可以不记录coords)，可选xpath和element
 export interface TapAction extends BaseAction {
   type: 'tap'
-  coords: CoordinateInfo
+  coords?: CoordinateInfo
   xpath?: XPathInfo
   element?: ElementInfo
   params: TapParams

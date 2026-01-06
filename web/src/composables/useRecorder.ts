@@ -32,8 +32,7 @@ function normalizeRecordingConfig(config?: Partial<RecordingConfig>): RecordingC
     recordElementDetails: config?.recordElementDetails ?? true,
     globalFailureControl: {
       enabled: config?.globalFailureControl?.enabled ?? false,
-      onExecuteFailure: normalizeFailureBehavior(config?.globalFailureControl?.onExecuteFailure),
-      onAssertFailure: normalizeFailureBehavior(config?.globalFailureControl?.onAssertFailure),
+      onFailure: normalizeFailureBehavior(config?.globalFailureControl?.onFailure),
     },
   }
 }
@@ -41,8 +40,7 @@ function normalizeRecordingConfig(config?: Partial<RecordingConfig>): RecordingC
 function normalizeRecordedAction(action: RecordedAction): RecordedAction {
   return {
     ...action,
-    onExecuteFailure: normalizeFailureBehavior(action.onExecuteFailure),
-    onAssertFailure: normalizeFailureBehavior(action.onAssertFailure),
+    onFailure: normalizeFailureBehavior(action.onFailure),
   }
 }
 
@@ -141,12 +139,11 @@ export function useRecorder(
   /**
    * 生成XPath信息(从UINode)
    */
-  function createXPathInfo(node: UINode | null, fallbackX: number, fallbackY: number): XPathInfo | undefined {
+  function createXPathInfo(node: UINode | null): XPathInfo | undefined {
     if (!node || !node.xpath) return undefined
 
     return {
       selector: node.xpath,
-      fallbackCoords: { x: fallbackX, y: fallbackY },
     }
   }
 
@@ -206,8 +203,7 @@ export function useRecorder(
       timestamp: now,
       relativeTime: currentRelativeTime,
       waitAfter: 0, // 默认为0，会在下一个action添加时更新
-      onExecuteFailure: DEFAULT_FAILURE_BEHAVIOR,
-      onAssertFailure: DEFAULT_FAILURE_BEHAVIOR,
+      onFailure: DEFAULT_FAILURE_BEHAVIOR,
       screenshot: await captureScreenshot(),
     }
 
@@ -215,16 +211,19 @@ export function useRecorder(
 
     // 根据类型构建正确的 action 对象
     switch (type) {
-      case 'tap':
+      case 'tap': {
+        const xpathInfo = createXPathInfo(selectedNode || null)
         action = {
           ...baseAction,
           type: 'tap',
-          coords: coords!,
-          xpath: coords ? createXPathInfo(selectedNode || null, coords.x, coords.y) : undefined,
+          // 有XPath时不记录coords,避免降级
+          coords: xpathInfo ? undefined : coords!,
+          xpath: xpathInfo,
           element: createElementInfo(selectedNode || null),
           params: params as TapParams,
         }
         break
+      }
       case 'swipe':
         action = {
           ...baseAction,
@@ -329,34 +328,16 @@ export function useRecorder(
    * 录制断言操作（支持编辑模式添加）
    * 断言可以在录制中或有已录制内容时添加
    */
-  async function recordAssert(
-    params: AssertParams,
-    failureConfig?: { onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }
-  ) {
-    const onExecuteFailure = failureConfig?.onExecuteFailure || DEFAULT_FAILURE_BEHAVIOR
-    const onAssertFailure = failureConfig?.onAssertFailure || DEFAULT_FAILURE_BEHAVIOR
+  async function recordAssert(params: AssertParams, onFailure?: FailureBehavior) {
+    const failureBehavior = onFailure || DEFAULT_FAILURE_BEHAVIOR
 
     // 如果在录制中，使用标准流程
     if (isRecording.value && !isPaused.value) {
-      // 标准流程暂不支持在这里设置 failureConfig (除非 modify addAction too, but addAction is internal)
-      // Actually addAction sets DEFAULT_FAILURE_BEHAVIOR.
-      // I should modify addAction to accept failure behaviors or update it after adding.
-      // Or just pass it to addAction if I modify addAction signature?
-      // Let's modify addAction signature implicitly via object argument or just manually push for now.
-      
-      // Since addAction is used by other methods, changing it is risky/tedious. 
-      // But wait, recordAssert calls addAction.
-      // Let's look at addAction. It creates baseAction with defaults.
-      
-      // I will skip addAction for assert or modify the action after adding?
-      // actions is a ref.
-      
       await addAction('assert', params)
-      // Find the last action and update it
+      // 更新最后添加的action的失败行为
       const last = actions.value[actions.value.length - 1]
       if (last && last.type === 'assert') {
-         last.onExecuteFailure = onExecuteFailure
-         last.onAssertFailure = onAssertFailure
+        last.onFailure = failureBehavior
       }
       return
     }
@@ -379,8 +360,7 @@ export function useRecorder(
       timestamp: now,
       relativeTime: newRelativeTime,
       waitAfter: 0, // 最后一个action默认为0
-      onExecuteFailure: onExecuteFailure,
-      onAssertFailure: onAssertFailure,
+      onFailure: failureBehavior,
       params,
     }
     actions.value.push(action)
@@ -424,11 +404,10 @@ export function useRecorder(
       throw new Error('Cannot change action timestamp')
     }
 
-    ;(merged as RecordedAction).onExecuteFailure = normalizeFailureBehavior((merged as RecordedAction).onExecuteFailure)
-    ;(merged as RecordedAction).onAssertFailure = normalizeFailureBehavior((merged as RecordedAction).onAssertFailure)
+    ;(merged as RecordedAction).onFailure = normalizeFailureBehavior((merged as RecordedAction).onFailure)
 
-    // 类型安全的合并
-    actions.value[index] = merged as RecordedAction
+    // 使用 splice 确保 Vue 响应式系统能正确跟踪数组变化
+    actions.value.splice(index, 1, merged as RecordedAction)
     return true
   }
 

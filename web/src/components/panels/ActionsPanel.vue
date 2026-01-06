@@ -5,6 +5,7 @@
       <n-tab-pane name="record" :tab="t.recordTab">
         <RecordTab
           :recorder="recorder"
+          :player="player"
           :current-playback-index="player.currentIndex.value"
           :is-playback-active="player.isPlaying.value"
           :t="t"
@@ -345,11 +346,8 @@ function getIsRecording() {
 /**
  * 录制断言操作
  */
-async function recordAssert(
-  params: AssertParams,
-  failureConfig?: { onExecuteFailure: FailureBehavior; onAssertFailure: FailureBehavior }
-) {
-  await recorder.recordAssert(params, failureConfig)
+async function recordAssert(params: AssertParams, onFailure?: FailureBehavior) {
+  await recorder.recordAssert(params, onFailure)
 }
 
 // 组件挂载时加载录制列表

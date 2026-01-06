@@ -222,11 +222,18 @@ const messages = {
       },
 
       // 失败控制
-      failureControl: '失败控制',
-      onExecuteFailure: '执行失败时',
-      onAssertFailure: '断言失败时',
-      continue: '继续执行',
-      stop: '停止回放',
+      failureControl: {
+        title: '失败控制',
+        globalSwitch: '全局覆盖',
+        onExecute: '执行失败',
+        onAssert: '断言失败',
+        continue: '跳过',
+        stop: '停止',
+        behaviors: {
+          continue: '跳过',
+          stop: '停止'
+        }
+      },
     },
 
     // 包管理面板
@@ -478,11 +485,18 @@ const messages = {
       },
 
       // Failure Control
-      failureControl: 'Failure Control',
-      onExecuteFailure: 'On Execution Failure',
-      onAssertFailure: 'On Assertion Failure',
-      continue: 'Continue',
-      stop: 'Stop Playback',
+      failureControl: {
+        title: 'Failure Control',
+        globalSwitch: 'Global Override',
+        onExecute: 'Execute Failure',
+        onAssert: 'Assert Failure',
+        continue: 'Continue',
+        stop: 'Stop',
+        behaviors: {
+          continue: 'Continue',
+          stop: 'Stop'
+        }
+      },
     },
 
     // Package panel
