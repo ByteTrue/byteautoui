@@ -57,6 +57,7 @@ export interface RawUINode {
 export interface UINode {
   key: string
   index?: number
+  name?: string  // iOS: accessibility identifier
   text?: string
   label?: string
   resource_id?: string
@@ -78,6 +79,7 @@ export interface UINode {
   rect?: { x: number; y: number; width: number; height: number }
   children?: UINode[]
   xpath?: string
+  properties?: Record<string, string>  // 原始属性
   [key: string]: unknown
 }
 
@@ -111,37 +113,18 @@ export interface IOSConfig {
 }
 
 // 转换原始节点为 UINode
-export function convertRawNode(
-  raw: RawUINode,
-  screenSize?: { width: number; height: number }
-): UINode {
+export function convertRawNode(raw: RawUINode): UINode {
   const props = raw.properties || {}
 
-  // 带屏幕尺寸时将归一化坐标还原为像素
-  const toAbsoluteBounds = (bounds: [number, number, number, number]) => {
-    const [x1, y1, x2, y2] = bounds
-    const hasScreenSize = !!screenSize && screenSize.width > 0 && screenSize.height > 0
-    const looksNormalized = x2 <= 1 && y2 <= 1
-
-    if (looksNormalized && hasScreenSize) {
-      return [
-        Math.round(x1 * screenSize!.width),
-        Math.round(y1 * screenSize!.height),
-        Math.round(x2 * screenSize!.width),
-        Math.round(y2 * screenSize!.height),
-      ] as [number, number, number, number]
-    }
-    return bounds
-  }
-
-  // 解析 bounds：优先使用API直接返回的bounds数组（iOS），否则从rect或字符串解析（Android）
+  // 解析 bounds：优先使用API直接返回的bounds数组，否则从rect或字符串解析
+  // 注意：iOS 返回归一化坐标 (0-1)，Android 返回像素坐标，前端 addRect 会统一处理
   let boundsArray: [number, number, number, number] | undefined
 
   if (raw.bounds) {
-    // iOS/Android：API可能返回归一化坐标，必要时恢复为像素
-    boundsArray = toAbsoluteBounds(raw.bounds)
+    // iOS/Android：直接使用 API 返回的 bounds（iOS 为归一化坐标，Android 为像素坐标）
+    boundsArray = raw.bounds
   } else if (raw.rect) {
-    // Android (U2)：从rect转换为bounds数组（像素坐标）
+    // Android (U2)：从 rect 转换为 bounds 数组（像素坐标）
     boundsArray = [
       raw.rect.x,
       raw.rect.y,
@@ -149,21 +132,22 @@ export function convertRawNode(
       raw.rect.y + raw.rect.height,
     ]
   } else if (props.bounds) {
-    // Android (ADB)：解析bounds字符串 "[0,0][100,100]"
+    // Android (ADB)：解析 bounds 字符串 "[0,0][100,100]"
     const match = props.bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/)
     if (match && match[1] && match[2] && match[3] && match[4]) {
-      boundsArray = toAbsoluteBounds([
+      boundsArray = [
         parseInt(match[1], 10),
         parseInt(match[2], 10),
         parseInt(match[3], 10),
         parseInt(match[4], 10),
-      ])
+      ]
     }
   }
 
   return {
     key: raw.key,
     index: props.index ? parseInt(props.index) : undefined,
+    name: props.name || undefined,  // iOS: accessibility identifier
     text: props.text || undefined,
     label: props.label || undefined,
     resource_id: props['resource-id'] || undefined,
@@ -183,7 +167,8 @@ export function convertRawNode(
     visible_to_user: props['visible-to-user'] === 'true',
     bounds: boundsArray,
     rect: raw.rect || undefined,
-    children: raw.children?.map(child => convertRawNode(child, screenSize)),
+    properties: props,  // 保留原始属性供 XPath 生成使用
+    children: raw.children?.map(child => convertRawNode(child)),
   }
 }
 
@@ -216,12 +201,10 @@ export function convertRawHierarchy(raw: RawHierarchyRoot): HierarchyData {
   // 获取 rotation
   const rotation = raw.properties?.rotation ? parseInt(raw.properties.rotation) : 0
 
-  const screenSize = width > 0 && height > 0 ? { width, height } : undefined
-
   return {
     width,
     height,
     rotation,
-    nodes: raw.children?.map(child => convertRawNode(child, screenSize)) || [],
+    nodes: raw.children?.map(child => convertRawNode(child)) || [],
   }
 }
