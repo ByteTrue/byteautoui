@@ -2,11 +2,27 @@ import type { UINode } from '@/api/types'
 
 /**
  * 生成节点的XPath
+ * 策略：
+ * 1. 如果节点有唯一标识符（resource-id），直接使用短路径 //*[@resource-id="..."]
+ * 2. 否则构建从根到节点的完整路径
+ *
  * @param node 目标节点
  * @param allNodes 所有节点的扁平列表
  * @returns XPath字符串
  */
 export function generateXPath(node: UINode, allNodes: UINode[]): string {
+  // Android: resource-id 通常是唯一的，可以直接定位
+  if (node.resource_id) {
+    return `//*[@resource-id="${node.resource_id}"]`
+  }
+
+  // iOS: name (accessibility identifier) 通常是唯一的
+  const isIOS = node.class_name?.startsWith('XCUIElementType')
+  if (isIOS && node.name && node.name.trim()) {
+    return `//${node.class_name}[@name="${node.name}"]`
+  }
+
+  // 构建完整路径
   const path: string[] = []
   let current: UINode | undefined = node
 
@@ -21,26 +37,42 @@ export function generateXPath(node: UINode, allNodes: UINode[]): string {
 
 /**
  * 生成单个节点的XPath段
- * 优先级：resource-id > text/label > class + index
+ * 优先级：
+ * - Android: resource-id > content-desc > text > class + index
+ * - iOS: name > label > class + index
  */
 function generateSegment(node: UINode, allNodes: UINode[]): string {
-  // 优先使用resource-id（唯一标识）
+  const className = node.class_name || '*'
+  const isIOS = className.startsWith('XCUIElementType')
+
+  // Android: 优先使用 resource-id
   if (node.resource_id) {
     return `*[@resource-id="${node.resource_id}"]`
   }
 
-  // 其次使用text（如果文本唯一）
+  // Android: 使用 content-desc（无障碍描述，常用于图标按钮）
+  if (!isIOS && node.content_desc && node.content_desc.trim()) {
+    return `${className}[@content-desc="${node.content_desc}"]`
+  }
+
+  // iOS: 优先使用 name（accessibility identifier）
+  if (isIOS && node.name && node.name.trim() && node.name !== className) {
+    return `${className}[@name="${node.name}"]`
+  }
+
+  // 使用 label（iOS）或 text（Android）
+  if (node.label && node.label.trim()) {
+    return `${className}[@label="${node.label}"]`
+  }
   if (node.text && node.text.trim()) {
+    // Android: 使用 class + text 组合，更精确
+    if (!isIOS) {
+      return `${className}[@text="${node.text}"]`
+    }
     return `*[@text="${node.text}"]`
   }
 
-  // iOS：使用label（如果可用）
-  if (node.label && node.label.trim()) {
-    return `*[@label="${node.label}"]`
-  }
-
-  // 最后使用class + index
-  const className = node.class_name || '*'
+  // 最后使用 class + index
   const parent = findParent(node, allNodes)
 
   if (parent) {
