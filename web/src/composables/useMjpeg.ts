@@ -22,6 +22,7 @@ export interface MjpegOptions {
   enabled: Ref<boolean>
   canvasRef?: Ref<HTMLCanvasElement | null>
   preferCanvas?: Ref<boolean> | boolean
+  onResize?: (width: number, height: number) => void
 }
 
 export function useMjpeg(options: MjpegOptions) {
@@ -111,9 +112,11 @@ export function useMjpeg(options: MjpegOptions) {
         const frame = latestFrame.value
         const canvas = canvasRef.value
         if (frame && canvas) {
-          if (canvas.width === 0 || canvas.height === 0) {
+          // 当 canvas 尺寸与帧尺寸不匹配时更新并通知外部同步 drawingCanvas
+          if (canvas.width !== frame.width || canvas.height !== frame.height) {
             canvas.width = frame.width
             canvas.height = frame.height
+            options.onResize?.(frame.width, frame.height)
           }
           ctx.drawImage(frame, 0, 0, canvas.width, canvas.height)
           frame.close()

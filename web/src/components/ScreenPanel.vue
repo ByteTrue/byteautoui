@@ -150,6 +150,10 @@ const mjpeg = useMjpeg({
   enabled: mjpegMode,
   canvasRef: mjpegCanvasRef,
   preferCanvas: PREFER_MJPEG_CANVAS,
+  onResize: (width, height) => {
+    // MJPEG Canvas 尺寸变化时同步 drawingCanvas
+    resizeCanvas(width, height)
+  },
 })
 
 const useMjpegCanvas = computed(() => mjpeg.useCanvasRenderer.value)
