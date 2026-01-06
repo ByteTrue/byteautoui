@@ -11,15 +11,23 @@ import type { UINode } from '@/api/types'
  * @returns XPath字符串
  */
 export function generateXPath(node: UINode, allNodes: UINode[]): string {
-  // Android: resource-id 通常是唯一的，可以直接定位
+  // Android: resource-id 检查唯一性后使用短路径
   if (node.resource_id) {
-    return `//*[@resource-id="${node.resource_id}"]`
+    const count = allNodes.filter(n => n.resource_id === node.resource_id).length
+    if (count === 1) {
+      return `//*[@resource-id="${node.resource_id}"]`
+    }
+    // resource-id 不唯一，继续使用完整路径
   }
 
-  // iOS: name (accessibility identifier) 通常是唯一的
+  // iOS: name (accessibility identifier) 检查唯一性后使用短路径
   const isIOS = node.class_name?.startsWith('XCUIElementType')
   if (isIOS && node.name && node.name.trim()) {
-    return `//${node.class_name}[@name="${node.name}"]`
+    const count = allNodes.filter(n => n.name === node.name).length
+    if (count === 1) {
+      return `//${node.class_name}[@name="${node.name}"]`
+    }
+    // name 不唯一，继续使用完整路径
   }
 
   // 构建完整路径

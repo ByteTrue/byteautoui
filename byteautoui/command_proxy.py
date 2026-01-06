@@ -410,12 +410,13 @@ def assert_element(driver: BaseDriver, params: AssertElementRequest) -> AssertRe
                 driver,
                 'and',  # 单条件用 and
                 [condition],
-                wait.model_dump()
+                wait.model_dump(),
+                platform=params.platform
             )
             return AssertResponse(success=success, message=message, details=details)
 
         # 不等待，立即验证
-        found, details = validate_element_exists(driver, params.selector)
+        found, details = validate_element_exists(driver, params.selector, platform=params.platform)
 
         if params.expect == AssertExpect.EXISTS:
             success = found
@@ -451,7 +452,8 @@ def assert_image(driver: BaseDriver, params: AssertImageRequest) -> AssertRespon
                 driver,
                 'and',
                 [condition],
-                wait.model_dump()
+                wait.model_dump(),
+                platform=params.platform
             )
             return AssertResponse(success=success, message=message, details=details)
 

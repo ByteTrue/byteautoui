@@ -197,8 +197,10 @@ class GoIOSWDAServer:
         time.sleep(0.3)
 
         if self._wda_process.poll() is not None:
+            exit_code = self._wda_process.returncode
+            self._wda_process = None  # 清理引用，避免资源泄漏
             raise RuntimeError(
-                f"WDA failed to start (exit code: {self._wda_process.returncode})\n"
+                f"WDA failed to start (exit code: {exit_code})\n"
                 f"请检查:\n"
                 f"1. WDA是否已安装到设备 (bundle ID: {self.wda_bundle_id})\n"
                 f"2. bundle ID是否正确\n"
@@ -231,7 +233,9 @@ class GoIOSWDAServer:
         time.sleep(0.3)
 
         if self._forward_process.poll() is not None:
-            raise RuntimeError(f"Port forward failed (exit code: {self._forward_process.returncode})")
+            exit_code = self._forward_process.returncode
+            self._forward_process = None  # 清理引用，避免资源泄漏
+            raise RuntimeError(f"Port forward failed (exit code: {exit_code})")
 
         logger.info("Port forward established")
 

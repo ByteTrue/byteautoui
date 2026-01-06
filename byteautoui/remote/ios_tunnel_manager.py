@@ -5,6 +5,7 @@
 
 import logging
 import subprocess
+import threading
 import time
 from typing import Dict, Optional
 
@@ -19,15 +20,17 @@ class IOSTunnelManager:
     """
 
     _instance: Optional['IOSTunnelManager'] = None
-    _tunnel_processes: Dict[str, subprocess.Popen] = {}  # {udid: process}
-    _device_ref_counts: Dict[str, int] = {}  # {udid: ref_count}
+    _lock = threading.Lock()
 
     def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._tunnel_processes = {}
-            cls._device_ref_counts = {}
-        return cls._instance
+        with cls._lock:
+            if cls._instance is None:
+                instance = super().__new__(cls)
+                # 实例属性（不是类变量）
+                instance._tunnel_processes: Dict[str, subprocess.Popen] = {}
+                instance._device_ref_counts: Dict[str, int] = {}
+                cls._instance = instance
+            return cls._instance
 
     @classmethod
     def get_instance(cls) -> 'IOSTunnelManager':

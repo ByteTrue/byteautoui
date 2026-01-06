@@ -52,6 +52,7 @@ export function useMjpeg(options: MjpegOptions) {
   let lastRenderTime = 0
   let streamAbort: AbortController | null = null
   let streamTask: Promise<void> | null = null
+  let commandAbort: AbortController | null = null  // 用于取消 sendCommand 调用
 
   const mjpegUrl = computed(() => {
     if (!isStreaming.value) return null
@@ -192,9 +193,21 @@ export function useMjpeg(options: MjpegOptions) {
       return
     }
 
+    // 取消之前的 pending 命令请求
+    if (commandAbort) {
+      commandAbort.abort()
+      commandAbort = null
+    }
+
     try {
       console.log('[iOS MJPEG] Starting WDA MJPEG stream...')
+      commandAbort = new AbortController()
+
+      // TODO: 如果 sendCommand 支持 AbortSignal，可以传入 commandAbort.signal
       await sendCommand(platform.value, serial.value, 'start_mjpeg_stream', {})
+
+      // 清理已完成的 commandAbort
+      commandAbort = null
 
       isStreaming.value = true
       error.value = null
@@ -206,6 +219,7 @@ export function useMjpeg(options: MjpegOptions) {
         startCanvasRenderer()
       }
     } catch (err) {
+      commandAbort = null
       const errMsg = `Failed to start iOS MJPEG stream: ${err instanceof Error ? err.message : String(err)}`
       error.value = errMsg
       console.error('[iOS MJPEG]', errMsg, err)
@@ -217,16 +231,30 @@ export function useMjpeg(options: MjpegOptions) {
       return
     }
 
+    // 取消之前的 pending 命令请求
+    if (commandAbort) {
+      commandAbort.abort()
+      commandAbort = null
+    }
+
     try {
       console.log('[iOS MJPEG] Stopping MJPEG stream...')
       stopCanvasRenderer()
+
+      commandAbort = new AbortController()
+
+      // TODO: 如果 sendCommand 支持 AbortSignal，可以传入 commandAbort.signal
       await sendCommand(platform.value, serial.value, 'stop_mjpeg_stream', {})
+
+      // 清理已完成的 commandAbort
+      commandAbort = null
 
       isStreaming.value = false
       resetFps()
 
       console.log('[iOS MJPEG] Stream stopped')
     } catch (err) {
+      commandAbort = null
       const errMsg = `Failed to stop iOS MJPEG stream: ${err instanceof Error ? err.message : String(err)}`
       error.value = errMsg
       console.error('[iOS MJPEG]', errMsg, err)
@@ -257,6 +285,11 @@ export function useMjpeg(options: MjpegOptions) {
   )
 
   onScopeDispose(() => {
+    // 取消所有 pending 请求
+    if (commandAbort) {
+      commandAbort.abort()
+      commandAbort = null
+    }
     // 同步清理渲染循环和帧资源
     stopCanvasRenderer()
     // 异步停止流，不阻塞销毁过程

@@ -173,6 +173,7 @@ class AssertElementRequest(BaseModel):
     selector: ElementSelector
     expect: AssertExpect
     wait: Optional[WaitConfig] = None
+    platform: str = "android"  # 平台类型: "android" | "ios" | "harmony"
 
 
 class AssertImageRequest(BaseModel):
@@ -180,6 +181,7 @@ class AssertImageRequest(BaseModel):
     template: ImageTemplate
     expect: AssertExpect
     wait: Optional[WaitConfig] = None
+    platform: str = "android"  # 平台类型: "android" | "ios" | "harmony"
 
 
 class AssertCombinedRequest(BaseModel):
