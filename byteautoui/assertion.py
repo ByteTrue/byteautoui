@@ -210,7 +210,8 @@ def execute_condition(
         (success: bool, details: dict | None)
     """
     cond_type = condition.get('type')
-    expect = AssertExpect(condition.get('expect'))
+    expect_raw = condition.get('expect')
+    expect = AssertExpect(expect_raw)
 
     if cond_type == 'element':
         # 元素断言
