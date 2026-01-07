@@ -282,4 +282,6 @@ export interface StepResult {
   status: StepResultStatus
   error?: string      // 失败原因
   duration?: number   // 执行耗时(毫秒)
+  screenshot?: string // Base64 截图（不含 data:image/... 前缀）
+  details?: Record<string, unknown> // 断言失败详情
 }

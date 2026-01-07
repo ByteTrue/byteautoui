@@ -15,7 +15,7 @@ import {
 import { SettingsOutline } from '@vicons/ionicons5'
 import { useI18nStore } from '@/stores/i18n'
 
-const props = defineProps<{
+defineProps<{
   show: boolean
   serial: string
   errorMessage?: string

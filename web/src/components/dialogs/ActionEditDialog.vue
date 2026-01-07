@@ -248,6 +248,7 @@ import {
   NRadio,
   NSwitch,
   NEmpty,
+  useMessage,
   type FormInst,
   type FormRules,
 } from 'naive-ui'
@@ -273,6 +274,8 @@ const t = computed(() => ({
   common: i18nStore.t.common,
   actions: i18nStore.t.actions,
 }))
+
+const message = useMessage()
 
 const visible = defineModel<boolean>('show', { required: true })
 const formRef = ref<FormInst | null>(null)
@@ -422,12 +425,12 @@ async function handleSave() {
       if (coordsChanged) {
         // 坐标变化，重新计算 scale（验证屏幕尺寸防止除零）
         const { width, height } = props.screenSize
-        if (!width || !height || width <= 0 || height <= 0) {
-          const errorMsg = `无法保存：屏幕尺寸无效 (${width}x${height})。请确保设备已连接。`
-          console.error(errorMsg)
-          window.$message?.error(errorMsg)
-          return
-        }
+	        if (!width || !height || width <= 0 || height <= 0) {
+	          const errorMsg = `无法保存：屏幕尺寸无效 (${width}x${height})。请确保设备已连接。`
+	          console.error(errorMsg)
+	          message.error(errorMsg)
+	          return
+	        }
         ;(updates as any).coords = {
           x: formData.value.coords.x,
           y: formData.value.coords.y,

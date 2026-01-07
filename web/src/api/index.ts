@@ -3,29 +3,48 @@ import { convertRawHierarchy } from './types'
 
 const API_BASE = '/api'
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  })
-  if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`${response.status}: ${text}`)
+type RequestOptions = RequestInit & { timeoutMs?: number }
+
+// 默认保持足够大，避免打断 installApp / 断言等待等长操作
+const DEFAULT_API_TIMEOUT_MS = 10 * 60_000
+
+async function request<T>(url: string, options?: RequestOptions): Promise<T> {
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_API_TIMEOUT_MS
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers,
+      },
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`${response.status}: ${text}`)
+    }
+    return response.json()
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`请求超时（${Math.round(timeoutMs / 1000)}s）：${url}`)
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
   }
-  return response.json()
 }
 
 // 获取应用信息
 export async function getAppInfo(): Promise<AppInfo> {
-  return request<AppInfo>(`${API_BASE}/info`)
+  return request<AppInfo>(`${API_BASE}/info`, { timeoutMs: 15_000 })
 }
 
 // 获取设备列表
 export async function getDeviceList(platform: Platform): Promise<DeviceInfo[]> {
-  return request<DeviceInfo[]>(`${API_BASE}/${platform}/list`)
+  return request<DeviceInfo[]>(`${API_BASE}/${platform}/list`, { timeoutMs: 15_000 })
 }
 
 // 获取设备截图 URL (display id 固定为 0，用 timestamp 做缓存刷新)
@@ -35,13 +54,13 @@ export function getScreenshotUrl(platform: Platform, serial: string): string {
 
 // 获取 UI 层级
 export async function getHierarchy(platform: Platform, serial: string): Promise<HierarchyData> {
-  const raw = await request<RawHierarchyRoot>(`${API_BASE}/${platform}/${serial}/hierarchy`)
+  const raw = await request<RawHierarchyRoot>(`${API_BASE}/${platform}/${serial}/hierarchy`, { timeoutMs: 15_000 })
   return convertRawHierarchy(raw)
 }
 
 // 获取当前应用
 export async function getCurrentApp(platform: Platform, serial: string): Promise<CurrentAppResponse> {
-  return request<CurrentAppResponse>(`${API_BASE}/${platform}/${serial}/command/currentApp`)
+  return request<CurrentAppResponse>(`${API_BASE}/${platform}/${serial}/command/currentApp`, { timeoutMs: 15_000 })
 }
 
 // 点击
@@ -50,6 +69,7 @@ export async function tap(platform: Platform, serial: string, x: number, y: numb
   await request(`${API_BASE}/${platform}/${serial}/command/tap`, {
     method: 'POST',
     body: JSON.stringify(body),
+    timeoutMs: 15_000,
   })
 }
 
@@ -63,23 +83,25 @@ export async function sendCommand(
   return request(`${API_BASE}/${platform}/${serial}/command/${command}`, {
     method: 'POST',
     body: JSON.stringify(params || {}),
+    timeoutMs: DEFAULT_API_TIMEOUT_MS,
   })
 }
 
 // 获取平台功能
 export async function getFeatures(platform: Platform): Promise<Record<string, boolean>> {
-  return request<Record<string, boolean>>(`${API_BASE}/${platform}/features`)
+  return request<Record<string, boolean>>(`${API_BASE}/${platform}/features`, { timeoutMs: 15_000 })
 }
 
 // iOS 配置管理
 export async function getIOSConfig(serial: string): Promise<import('./types').IOSConfig> {
-  return request<import('./types').IOSConfig>(`${API_BASE}/ios/${serial}/ios-config`)
+  return request<import('./types').IOSConfig>(`${API_BASE}/ios/${serial}/ios-config`, { timeoutMs: 15_000 })
 }
 
 export async function setIOSConfig(serial: string, config: Partial<import('./types').IOSConfig>): Promise<import('./types').IOSConfig> {
   return request<import('./types').IOSConfig>(`${API_BASE}/ios/${serial}/ios-config`, {
     method: 'POST',
     body: JSON.stringify(config),
+    timeoutMs: 15_000,
   })
 }
 

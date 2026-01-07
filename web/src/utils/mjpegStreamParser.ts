@@ -30,7 +30,7 @@ function concatBuffer(a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> {
 
 export function extractBoundary(contentType?: string | null): string | null {
   if (!contentType) return null
-  const match = /boundary="?([^\";]+)"?/i.exec(contentType)
+  const match = /boundary="?([^";]+)"?/i.exec(contentType)
   if (!match) return null
   return normalizeBoundary(match[1]!)
 }

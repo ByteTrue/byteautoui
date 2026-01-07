@@ -5,6 +5,12 @@ import { createPinia, setActivePinia } from 'pinia'
 
 // Mock Naive UI components
 vi.mock('naive-ui', () => ({
+  useMessage: () => ({
+    error: vi.fn(),
+    warning: vi.fn(),
+    success: vi.fn(),
+    info: vi.fn(),
+  }),
   NModal: {
     template: `
       <div class="n-modal">

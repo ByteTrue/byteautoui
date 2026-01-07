@@ -515,7 +515,7 @@ function toAbsoluteBounds(bounds: [number, number, number, number]) {
 }
 
 // Handle ScreenPanel tap event
-function handleTap(_x: number, _y: number) {
+function handleTap() {
   // Note: ScreenPanel already handles sending tap to device in pointer mode
   // Action recording is now handled by ActionsPanel component
 }
@@ -725,13 +725,18 @@ async function refresh() {
     }
   }
 
+  if (store.error) {
+    message.error(store.error)
+    return
+  }
+
   // Also refresh current activity
   try {
     const result = await sendCommand(props.platform, props.serial, 'currentApp', {})
     if (result && typeof result === 'object' && 'package' in result) {
       currentActivity.value = (result as { package: string }).package || ''
     }
-  } catch (error) {
+  } catch {
     // Ignore error, activity display is optional
   }
 }

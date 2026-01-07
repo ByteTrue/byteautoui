@@ -4,7 +4,7 @@
  */
 
 import { ref, onUnmounted, type Ref } from 'vue'
-// @ts-ignore - JMuxer 没有类型定义
+// @ts-expect-error - JMuxer 没有类型定义
 import JMuxer from 'jmuxer'
 import type { Platform } from '@/api/types'
 
@@ -115,8 +115,8 @@ export function useScrcpy(options: ScrcpyOptions) {
           try {
             const data = JSON.parse(event.data)
             console.log('[Scrcpy] Control message:', data)
-          } catch (err) {
-            console.warn('[Scrcpy] Invalid message:', event.data)
+          } catch (parseErr) {
+            console.warn('[Scrcpy] Invalid message:', event.data, parseErr)
           }
         }
       }
