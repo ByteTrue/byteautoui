@@ -203,6 +203,11 @@ function addCondition(condition: AssertCondition) {
 }
 
 function removeCondition(index: number) {
+  // 越界保护
+  if (index < 0 || index >= conditions.value.length) {
+    console.warn(`removeCondition: 无效的索引 ${index}（条件总数: ${conditions.value.length}）`)
+    return
+  }
   conditions.value.splice(index, 1)
 }
 
@@ -210,6 +215,12 @@ function removeCondition(index: number) {
  * 切换条件的期望状态（存在 <-> 不存在）
  */
 function toggleExpect(index: number) {
+  // 越界保护
+  if (index < 0 || index >= conditions.value.length) {
+    console.warn(`toggleExpect: 无效的索引 ${index}（条件总数: ${conditions.value.length}）`)
+    return
+  }
+
   const condition = conditions.value[index]
   if (condition) {
     condition.expect = condition.expect === 'exists' ? 'not_exists' : 'exists'

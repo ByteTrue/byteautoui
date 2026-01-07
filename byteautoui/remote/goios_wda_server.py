@@ -251,8 +251,25 @@ class GoIOSWDAServer:
                 # 全部检查通过
                 logger.debug(f"Health check passed for device {self.device_udid[:8]}...")
 
+            except (OSError, socket.error) as e:
+                # 网络/IO异常是预期的，记录但继续
+                logger.debug(f"Transient network/IO error in monitor loop for {self.device_udid[:8]}...: {e}")
+            except AttributeError as e:
+                # 数据结构被破坏，这是严重问题
+                logger.error(
+                    f"CRITICAL: Monitor loop data corruption for device {self.device_udid[:8]}..., "
+                    f"stopping monitor: {e}",
+                    exc_info=True
+                )
+                break  # 停止循环，不要假装正常
             except Exception as e:
-                logger.error(f"Error in monitor loop for device {self.device_udid[:8]}...: {e}")
+                # 非预期异常，这是严重问题
+                logger.error(
+                    f"CRITICAL: Monitor loop crashed for device {self.device_udid[:8]}..., "
+                    f"health monitoring disabled: {e}",
+                    exc_info=True
+                )
+                break  # 停止循环，让问题暴露出来
 
         logger.info(f"Monitor loop exited for device {self.device_udid[:8]}...")
 
@@ -306,11 +323,18 @@ class GoIOSWDAServer:
             try:
                 self._forward_process.terminate()
                 self._forward_process.wait(timeout=2)
-            except Exception:
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Port forward process did not terminate, killing (PID: {self._forward_process.pid})")
                 try:
                     self._forward_process.kill()
-                except Exception:
+                except ProcessLookupError:
+                    # 进程已死亡，这是正常情况
                     pass
+            except ProcessLookupError:
+                # 进程已不存在，正常情况
+                pass
+            except Exception as e:
+                logger.error(f"Failed to cleanup port forward process: {e}", exc_info=True)
             finally:
                 self._forward_process = None
 
@@ -318,8 +342,10 @@ class GoIOSWDAServer:
         if self._forward_log_file:
             try:
                 self._forward_log_file.close()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to close forward log file: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error closing forward log file: {e}", exc_info=True)
             finally:
                 self._forward_log_file = None
 
@@ -328,11 +354,16 @@ class GoIOSWDAServer:
             try:
                 self._mjpeg_forward_process.terminate()
                 self._mjpeg_forward_process.wait(timeout=2)
-            except Exception:
+            except subprocess.TimeoutExpired:
+                logger.warning(f"MJPEG forward process did not terminate, killing (PID: {self._mjpeg_forward_process.pid})")
                 try:
                     self._mjpeg_forward_process.kill()
-                except Exception:
+                except ProcessLookupError:
                     pass
+            except ProcessLookupError:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to cleanup MJPEG forward process: {e}", exc_info=True)
             finally:
                 self._mjpeg_forward_process = None
 
@@ -340,8 +371,10 @@ class GoIOSWDAServer:
         if self._mjpeg_forward_log_file:
             try:
                 self._mjpeg_forward_log_file.close()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to close MJPEG forward log file: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error closing MJPEG forward log file: {e}", exc_info=True)
             finally:
                 self._mjpeg_forward_log_file = None
 
@@ -350,11 +383,16 @@ class GoIOSWDAServer:
             try:
                 self._wda_process.terminate()
                 self._wda_process.wait(timeout=2)
-            except Exception:
+            except subprocess.TimeoutExpired:
+                logger.warning(f"WDA process did not terminate, killing (PID: {self._wda_process.pid})")
                 try:
                     self._wda_process.kill()
-                except Exception:
+                except ProcessLookupError:
                     pass
+            except ProcessLookupError:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to cleanup WDA process: {e}", exc_info=True)
             finally:
                 self._wda_process = None
 
@@ -362,8 +400,10 @@ class GoIOSWDAServer:
         if self._wda_log_file:
             try:
                 self._wda_log_file.close()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to close WDA log file: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error closing WDA log file: {e}", exc_info=True)
             finally:
                 self._wda_log_file = None
 
@@ -375,23 +415,36 @@ class GoIOSWDAServer:
 
         # 打开日志文件（w模式覆盖旧日志）
         log_path = f"/tmp/wda_{self.device_udid[:8]}.log"
-        self._wda_log_file = open(log_path, "w", buffering=1)  # 行缓冲
+        try:
+            self._wda_log_file = open(log_path, "w", buffering=1)  # 行缓冲
 
-        cmd = [
-            "ios",
-            "runwda",
-            f"--bundleid={self.wda_bundle_id}",
-            f"--testrunnerbundleid={self.wda_bundle_id}",
-            "--xctestconfig=WebDriverAgentRunner.xctest",
-            f"--udid={self.device_udid}"
-        ]
+            cmd = [
+                "ios",
+                "runwda",
+                f"--bundleid={self.wda_bundle_id}",
+                f"--testrunnerbundleid={self.wda_bundle_id}",
+                "--xctestconfig=WebDriverAgentRunner.xctest",
+                f"--udid={self.device_udid}"
+            ]
 
-        # 重定向 stdout/stderr 到日志文件
-        self._wda_process = subprocess.Popen(
-            cmd,
-            stdout=self._wda_log_file,
-            stderr=subprocess.STDOUT,  # 合并 stderr 到 stdout
-        )
+            # 重定向 stdout/stderr 到日志文件
+            self._wda_process = subprocess.Popen(
+                cmd,
+                stdout=self._wda_log_file,
+                stderr=subprocess.STDOUT,  # 合并 stderr 到 stdout
+            )
+        except FileNotFoundError as e:
+            # 关闭日志文件
+            if self._wda_log_file:
+                self._wda_log_file.close()
+                self._wda_log_file = None
+            raise RuntimeError(f"WDA command not found: {e}. Please ensure 'ios' CLI is installed.")
+        except Exception as e:
+            # 关闭日志文件
+            if self._wda_log_file:
+                self._wda_log_file.close()
+                self._wda_log_file = None
+            raise RuntimeError(f"Failed to start WDA process: {e}")
 
         time.sleep(0.3)
 
@@ -405,8 +458,13 @@ class GoIOSWDAServer:
                 with open(log_path, "r") as f:
                     log_lines = f.readlines()
                     last_lines = "".join(log_lines[-10:]) if log_lines else "(no logs)"
-            except Exception:
-                last_lines = "(failed to read logs)"
+            except FileNotFoundError:
+                last_lines = f"(log file not found: {log_path})"
+            except UnicodeDecodeError:
+                last_lines = f"(log file contains binary data, see: {log_path})"
+            except Exception as e:
+                last_lines = f"(failed to read logs: {e.__class__.__name__}: {e})"
+                logger.error(f"Failed to read WDA logs at {log_path}: {e}", exc_info=True)
             finally:
                 self._wda_log_file = None
 
@@ -429,22 +487,35 @@ class GoIOSWDAServer:
 
         # 打开日志文件
         log_path = f"/tmp/wda_forward_{self.device_udid[:8]}_{self.wda_port}.log"
-        self._forward_log_file = open(log_path, "w", buffering=1)
+        try:
+            self._forward_log_file = open(log_path, "w", buffering=1)
 
-        cmd = [
-            "ios",
-            "forward",
-            str(self.wda_port),
-            str(self.wda_port),
-            f"--udid={self.device_udid}"
-        ]
+            cmd = [
+                "ios",
+                "forward",
+                str(self.wda_port),
+                str(self.wda_port),
+                f"--udid={self.device_udid}"
+            ]
 
-        # 重定向 stdout/stderr 到日志文件
-        self._forward_process = subprocess.Popen(
-            cmd,
-            stdout=self._forward_log_file,
-            stderr=subprocess.STDOUT,
-        )
+            # 重定向 stdout/stderr 到日志文件
+            self._forward_process = subprocess.Popen(
+                cmd,
+                stdout=self._forward_log_file,
+                stderr=subprocess.STDOUT,
+            )
+        except FileNotFoundError as e:
+            # 关闭日志文件
+            if self._forward_log_file:
+                self._forward_log_file.close()
+                self._forward_log_file = None
+            raise RuntimeError(f"Port forward command not found: {e}. Please ensure 'ios' CLI is installed.")
+        except Exception as e:
+            # 关闭日志文件
+            if self._forward_log_file:
+                self._forward_log_file.close()
+                self._forward_log_file = None
+            raise RuntimeError(f"Failed to start port forward process: {e}")
 
         time.sleep(0.3)
 
@@ -458,8 +529,13 @@ class GoIOSWDAServer:
                 with open(log_path, "r") as f:
                     log_lines = f.readlines()
                     last_lines = "".join(log_lines[-10:]) if log_lines else "(no logs)"
-            except Exception:
-                last_lines = "(failed to read logs)"
+            except FileNotFoundError:
+                last_lines = f"(log file not found: {log_path})"
+            except UnicodeDecodeError:
+                last_lines = f"(log file contains binary data, see: {log_path})"
+            except Exception as e:
+                last_lines = f"(failed to read logs: {e.__class__.__name__}: {e})"
+                logger.error(f"Failed to read port forward logs at {log_path}: {e}", exc_info=True)
             finally:
                 self._forward_log_file = None
 
@@ -479,22 +555,37 @@ class GoIOSWDAServer:
 
         # 打开日志文件
         log_path = f"/tmp/wda_mjpeg_forward_{self.device_udid[:8]}_{self.mjpeg_port}.log"
-        self._mjpeg_forward_log_file = open(log_path, "w", buffering=1)
+        try:
+            self._mjpeg_forward_log_file = open(log_path, "w", buffering=1)
 
-        cmd = [
-            "ios",
-            "forward",
-            str(self.mjpeg_port),
-            str(self.mjpeg_port),
-            f"--udid={self.device_udid}"
-        ]
+            cmd = [
+                "ios",
+                "forward",
+                str(self.mjpeg_port),
+                str(self.mjpeg_port),
+                f"--udid={self.device_udid}"
+            ]
 
-        # 重定向 stdout/stderr 到日志文件
-        self._mjpeg_forward_process = subprocess.Popen(
-            cmd,
-            stdout=self._mjpeg_forward_log_file,
-            stderr=subprocess.STDOUT,
-        )
+            # 重定向 stdout/stderr 到日志文件
+            self._mjpeg_forward_process = subprocess.Popen(
+                cmd,
+                stdout=self._mjpeg_forward_log_file,
+                stderr=subprocess.STDOUT,
+            )
+        except FileNotFoundError as e:
+            # 关闭日志文件
+            if self._mjpeg_forward_log_file:
+                self._mjpeg_forward_log_file.close()
+                self._mjpeg_forward_log_file = None
+            logger.warning(f"MJPEG port forward command not found: {e}. MJPEG streaming may not work.")
+            return
+        except Exception as e:
+            # 关闭日志文件
+            if self._mjpeg_forward_log_file:
+                self._mjpeg_forward_log_file.close()
+                self._mjpeg_forward_log_file = None
+            logger.warning(f"Failed to start MJPEG port forward process: {e}")
+            return
 
         time.sleep(0.3)
 

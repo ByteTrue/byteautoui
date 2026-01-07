@@ -7,9 +7,9 @@
 
 # Request and Response
 import enum
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from byteautoui.model import Node
 
@@ -153,6 +153,13 @@ class ImageTemplate(BaseModel):
     threshold: float = 0.9
     name: Optional[str] = None
 
+    @field_validator('threshold')
+    @classmethod
+    def validate_threshold(cls, v: float) -> float:
+        if not 0 <= v <= 1:
+            raise ValueError(f'threshold 必须在 [0, 1] 范围内,当前值: {v}')
+        return v
+
 
 class ImageCondition(BaseModel):
     """图片断言条件"""
@@ -167,13 +174,33 @@ class WaitConfig(BaseModel):
     timeout: int = 5000      # 毫秒
     interval: int = 500      # 毫秒
 
+    @field_validator('timeout')
+    @classmethod
+    def validate_timeout(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError(f'timeout 必须 > 0,当前值: {v}')
+        return v
+
+    @field_validator('interval')
+    @classmethod
+    def validate_interval(cls, v: int, info) -> int:
+        if v <= 0:
+            raise ValueError(f'interval 必须 > 0,当前值: {v}')
+        # 注意：无法在这里访问 timeout 值，需要使用 model_validator
+        return v
+
+    def model_post_init(self, __context):
+        """验证 interval 不能大于 timeout"""
+        if self.interval > self.timeout:
+            raise ValueError(f'interval({self.interval}) 不能大于 timeout({self.timeout})')
+
 
 class AssertElementRequest(BaseModel):
     """元素断言请求"""
     selector: ElementSelector
     expect: AssertExpect
     wait: Optional[WaitConfig] = None
-    platform: str = "android"  # 平台类型: "android" | "ios" | "harmony"
+    platform: Literal["android", "ios", "harmony"] = "android"
 
 
 class AssertImageRequest(BaseModel):
@@ -181,15 +208,22 @@ class AssertImageRequest(BaseModel):
     template: ImageTemplate
     expect: AssertExpect
     wait: Optional[WaitConfig] = None
-    platform: str = "android"  # 平台类型: "android" | "ios" | "harmony"
+    platform: Literal["android", "ios", "harmony"] = "android"
 
 
 class AssertCombinedRequest(BaseModel):
     """组合断言请求"""
-    operator: str  # "and" | "or"
+    operator: Literal["and", "or"]  # 使用 Literal 限制值域
     conditions: List[Union[ElementCondition, ImageCondition]]
     wait: Optional[WaitConfig] = None
-    platform: str = "android"  # 平台类型: "android" | "ios" | "harmony"
+    platform: Literal["android", "ios", "harmony"] = "android"
+
+    @field_validator('conditions')
+    @classmethod
+    def validate_conditions(cls, v):
+        if len(v) == 0:
+            raise ValueError('断言条件不能为空')
+        return v
 
 
 class AssertResponse(BaseModel):

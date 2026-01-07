@@ -423,7 +423,9 @@ async function handleSave() {
         // 坐标变化，重新计算 scale（验证屏幕尺寸防止除零）
         const { width, height } = props.screenSize
         if (!width || !height || width <= 0 || height <= 0) {
-          console.error(`Invalid screen size: ${width}x${height}. Cannot update coordinates.`)
+          const errorMsg = `无法保存：屏幕尺寸无效 (${width}x${height})。请确保设备已连接。`
+          console.error(errorMsg)
+          window.$message?.error(errorMsg)
           return
         }
         ;(updates as any).coords = {

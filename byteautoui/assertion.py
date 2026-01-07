@@ -117,11 +117,14 @@ def validate_element_exists(
         }
 
     except etree.XPathError as e:
-        logger.error(f"XPath 语法错误: {e}")
+        logger.error(f"XPath 语法错误 (xpath={selector.xpath}): {e}")
         return False, {"reason": f"XPath 语法错误: {str(e)}", "xpath": selector.xpath}
     except Exception as e:
-        logger.error(f"元素验证失败: {e}", exc_info=True)
-        return False, {"reason": f"验证异常: {str(e)}"}
+        logger.error(f"元素验证失败 (xpath={selector.xpath}): {e}", exc_info=True)
+        return False, {
+            "reason": f"验证异常: {str(e)}",
+            "xpath": selector.xpath
+        }
 
 
 def validate_image_exists(
@@ -265,9 +268,12 @@ def execute_combined_assertion(
     if operator not in ('and', 'or'):
         raise ValueError(f"未知运算符: {operator}，仅支持 'and' 或 'or'")
 
-    # 验证 conditions
+    # 验证 conditions（理论上 Pydantic 已经验证过，这里是双重保险）
     if not conditions:
-        return True, "无断言条件", {"conditions": []}
+        raise AssertionError(
+            "BUG: 条件列表为空（应该在 Pydantic 验证时被拒绝）。"
+            "如果看到这个错误，说明验证逻辑有漏洞。"
+        )
 
     # 解析等待配置
     enabled = wait_config.get('enabled', False) if wait_config else False

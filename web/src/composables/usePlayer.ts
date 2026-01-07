@@ -363,12 +363,26 @@ export function usePlayer(
       } catch (err) {
         const duration = Date.now() - startTime
         const errorMsg = err instanceof Error ? err.message : String(err)
-        setStepResult(action.id, { status: 'failed', error: errorMsg, duration })
 
-        // 如果是断言失败且有截图，输出失败截图
-        if (err instanceof AssertionFailureError && err.screenshot) {
-          console.log('失败截图:', `data:image/jpeg;base64,${err.screenshot}`)
+        // 构建失败结果（包含截图和详情）
+        const failureResult: StepResult = {
+          status: 'failed',
+          error: errorMsg,
+          duration
         }
+
+        // 如果是断言失败，添加截图和详情
+        if (err instanceof AssertionFailureError) {
+          if (err.screenshot) {
+            failureResult.screenshot = err.screenshot
+            console.log('失败截图:', `data:image/jpeg;base64,${err.screenshot}`)
+          }
+          if (err.details) {
+            failureResult.details = err.details
+          }
+        }
+
+        setStepResult(action.id, failureResult)
 
         const behavior = getEffectiveFailureBehavior(action)
 

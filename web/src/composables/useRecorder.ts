@@ -516,9 +516,15 @@ export function useRecorder(
         return false
       }
 
-      // 验证tap和swipe操作必须有坐标
-      if ((action.type === 'tap' || action.type === 'swipe') && !action.coords) {
-        console.error(`操作 ${i} (${action.type}) 缺少坐标信息`)
+      // 验证 tap: 必须有 coords 或 xpath
+      if (action.type === 'tap' && !action.coords && !action.xpath) {
+        console.error(`操作 ${i} (tap) 缺少坐标或XPath信息`)
+        return false
+      }
+
+      // 验证 swipe: 必须有 coords
+      if (action.type === 'swipe' && !action.coords) {
+        console.error(`操作 ${i} (swipe) 缺少坐标信息`)
         return false
       }
 
