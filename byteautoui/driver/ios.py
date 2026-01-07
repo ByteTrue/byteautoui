@@ -7,13 +7,17 @@
 
 import json
 import logging
+import threading
 from functools import partial
-from typing import List, Optional, Tuple
+from http.client import RemoteDisconnected
+from typing import Callable, List, Optional, Tuple, TypeVar
 from xml.etree import ElementTree
 
 import wdapy
 from PIL import Image
 from wdapy._proto import POST
+from wdapy.exceptions import RequestError
+from wdapy.usbmux.exceptions import MuxConnectError
 
 from byteautoui.command_types import CurrentAppResponse
 from byteautoui.driver.base_driver import BaseDriver
@@ -25,6 +29,7 @@ from byteautoui.utils.usbmux import select_device
 
 
 logger = logging.getLogger(__name__)
+T = TypeVar("T")
 
 
 class IOSDriver(BaseDriver):
@@ -49,15 +54,11 @@ class IOSDriver(BaseDriver):
             )
             self._wda_server.start()
 
-        self.wda = wdapy.AppiumUSBClient(self.device.serial)
-
-        # 禁用 wdapy 的自动恢复机制（使用 tidevice）
-        # 我们使用自己的监控线程通过 go-ios 来管理 WDA 生命周期
-        self.wda.set_recover_handler(None)
+        self._wda_lock = threading.Lock()
+        self._reset_wda_client(configure=True)
 
         # MJPEG流管理（用于指针模式）
         self._mjpeg_stream: Optional[IOSMJPEGStream] = None
-        self._configure_mjpeg_settings()
 
     def _configure_mjpeg_settings(self):
         settings = build_wda_mjpeg_settings()
@@ -65,6 +66,65 @@ class IOSDriver(BaseDriver):
         # 仅在 capabilities 注入失败时尝试 /appium/settings 降级
         if session_id is None:
             self._apply_settings_api(settings)
+
+    def _reset_wda_client(self, configure: bool = False):
+        self.wda = wdapy.AppiumUSBClient(self.device.serial)
+
+        # 禁用 wdapy 的自动恢复机制（使用 tidevice）
+        # 我们使用自己的监控线程通过 go-ios 来管理 WDA 生命周期
+        self.wda.set_recover_handler(None)
+
+        if configure:
+            self._configure_mjpeg_settings()
+
+    def _reset_mjpeg_stream(self):
+        if self._mjpeg_stream:
+            self._mjpeg_stream.stop_recording()
+            self._mjpeg_stream = None
+
+    def _is_wda_connection_error(self, exc: Exception) -> bool:
+        if isinstance(exc, IOSDriverException):
+            return False
+        if isinstance(exc, (MuxConnectError, RemoteDisconnected, ConnectionError, TimeoutError)):
+            return True
+        if isinstance(exc, RequestError):
+            message = str(exc).lower()
+            if "connectionbroken" in message or "remote end closed" in message or "mux" in message or "connect" in message:
+                return True
+        cause = exc.__cause__ or exc.__context__
+        if cause and cause is not exc:
+            return self._is_wda_connection_error(cause)
+        return False
+
+    def _recover_wda(self, reason: str, timeout: float = 20) -> bool:
+        if not self._wda_server:
+            return False
+
+        with self._wda_lock:
+            if self._wda_server.is_alive():
+                return True
+            logger.info("WDA not healthy, attempting recovery: %s", reason)
+            if not self._wda_server.recover(reason=reason, timeout=timeout):
+                return False
+            self._reset_mjpeg_stream()
+            self._reset_wda_client(configure=True)
+            return True
+
+    def _call_wda(self, action: str, func: Callable[[], T]) -> T:
+        try:
+            return func()
+        except Exception as exc:
+            if not self._is_wda_connection_error(exc):
+                raise
+            logger.warning("WDA request failed during %s, attempting recovery: %s", action, exc)
+            if not self._recover_wda(reason=f"{action} failed"):
+                raise IOSDriverException(f"WDA not available during {action}") from exc
+            try:
+                return func()
+            except Exception as retry_exc:
+                if self._is_wda_connection_error(retry_exc):
+                    raise IOSDriverException(f"WDA recovered but {action} still failed") from retry_exc
+                raise
 
     def _try_apply_capabilities(self, settings: dict) -> Optional[str]:
         """优先通过 session capabilities 注入 MJPEG 配置，失败则降级。"""
@@ -140,16 +200,16 @@ class IOSDriver(BaseDriver):
         return self._request_json("GET", "/status")
     
     def screenshot(self, id: int = 0) -> Image.Image:
-        return self.wda.screenshot()
+        return self._call_wda("screenshot", lambda: self.wda.screenshot())
     
     def window_size(self) -> WindowSize:
         # wda.window_size() 返回 tuple (width, height)，需要转换为 WindowSize
-        w, h = self.wda.window_size()
+        w, h = self._call_wda("window_size", self.wda.window_size)
         return WindowSize(width=w, height=h)
     
     def dump_hierarchy(self) -> Tuple[str, Node]:
         """returns xml string and hierarchy object"""
-        t = self.wda.sourcetree()
+        t = self._call_wda("dump_hierarchy", self.wda.sourcetree)
         xml_data = t.value
         root = ElementTree.fromstring(xml_data)
         # 获取真实的屏幕尺寸（从根节点的width/height属性）
@@ -157,33 +217,36 @@ class IOSDriver(BaseDriver):
         return xml_data, parse_xml_element(root, wsize)
     
     def tap(self, x: int, y: int):
-        self.wda.tap(x, y)
+        self._call_wda("tap", lambda: self.wda.tap(x, y))
 
     def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: float = 0.5):
         """滑动操作（用于指针模式的拖拽）"""
-        self.wda.swipe(x1, y1, x2, y2, duration)
+        self._call_wda("swipe", lambda: self.wda.swipe(x1, y1, x2, y2, duration))
 
     def app_current(self) -> CurrentAppResponse:
-        info = self.wda.app_current()
+        info = self._call_wda("current_app", self.wda.app_current)
         return CurrentAppResponse(package=info.bundle_id, pid=info.pid)
 
     def home(self):
-        self.wda.homescreen()
+        self._call_wda("home", self.wda.homescreen)
     
     def app_switch(self):
         raise NotImplementedError()
 
     def volume_up(self):
-        self.wda.volume_up()
+        self._call_wda("volume_up", self.wda.volume_up)
     
     def volume_down(self):
-        self.wda.volume_down()
+        self._call_wda("volume_down", self.wda.volume_down)
 
     def start_mjpeg_stream(self) -> bool:
         """启动MJPEG流（用于指针模式）
 
         使用 WDA 原生 MJPEG 端点，默认端口 9100
         """
+        if self._mjpeg_stream and not self._mjpeg_stream.is_stream_available():
+            self._mjpeg_stream.stop_recording()
+            self._mjpeg_stream = None
         if not self._mjpeg_stream:
             # 获取 WDA 服务器的 MJPEG 端口配置
             mjpeg_port = None

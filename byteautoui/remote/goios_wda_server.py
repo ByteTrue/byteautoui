@@ -48,6 +48,9 @@ class GoIOSWDAServer:
     # 监控配置
     MONITOR_INTERVAL = 5  # 每5秒检查一次
     RESTART_COOLDOWN = 10  # 重启冷却时间，防止频繁重启
+    TUNNEL_WARMUP = 1.0  # tunnel 启动后等待稳定的时间
+    RESTART_MAX_ATTEMPTS = 2  # 重启尝试次数
+    RESTART_BACKOFF = 1.5  # 重启失败后的退避时间
 
     def __init__(self, device_udid: str, wda_bundle_id: Optional[str] = None, wda_port: Optional[int] = None, mjpeg_port: Optional[int] = None):
         """
@@ -140,6 +143,7 @@ class GoIOSWDAServer:
                 tunnel_time = time.time()
                 if not self._tunnel_manager.start_tunnel(self.device_udid):
                     raise RuntimeError(f"Failed to start tunnel for device {self.device_udid}")
+                self._warmup_tunnel()
                 tunnel_cost = time.time() - tunnel_time
 
                 # 如果端口被占用但WDA没运行，清理残留进程
@@ -275,46 +279,85 @@ class GoIOSWDAServer:
 
     def _attempt_restart(self):
         """尝试重启WDA（带冷却时间保护）"""
-        current_time = time.time()
+        self.recover(reason="health check failed", timeout=20)
 
-        # 检查冷却时间，防止频繁重启
-        if current_time - self._last_restart_time < self.RESTART_COOLDOWN:
-            logger.warning(
-                f"Restart cooldown active for device {self.device_udid[:8]}... "
-                f"(last restart: {current_time - self._last_restart_time:.1f}s ago)"
+    def recover(self, reason: str = "", timeout: float = 20, max_attempts: Optional[int] = None) -> bool:
+        """恢复WDA（清理后重启），返回是否恢复成功"""
+        device_lock = _get_device_lock(self.device_udid)
+        with device_lock:
+            if self._is_wda_running():
+                return True
+
+            current_time = time.time()
+            if current_time - self._last_restart_time < self.RESTART_COOLDOWN:
+                logger.warning(
+                    "Restart cooldown active for device %s... (last restart: %.1fs ago)",
+                    self.device_udid[:8],
+                    current_time - self._last_restart_time,
+                )
+                return False
+
+            self._last_restart_time = current_time
+            attempts = max_attempts or self.RESTART_MAX_ATTEMPTS
+            last_error: Optional[Exception] = None
+
+            for attempt in range(1, attempts + 1):
+                try:
+                    if reason:
+                        logger.info(
+                            "Recovering WDA for device %s... (attempt %d/%d, reason: %s)",
+                            self.device_udid[:8],
+                            attempt,
+                            attempts,
+                            reason,
+                        )
+                    else:
+                        logger.info(
+                            "Recovering WDA for device %s... (attempt %d/%d)",
+                            self.device_udid[:8],
+                            attempt,
+                            attempts,
+                        )
+
+                    start_time = time.time()
+                    self._cleanup_processes()
+
+                    if not self._tunnel_manager.start_tunnel(self.device_udid, force=True):
+                        raise RuntimeError(f"Failed to restart tunnel for device {self.device_udid}")
+                    self._warmup_tunnel(attempt=attempt)
+
+                    self._start_port_forward()
+                    self._start_mjpeg_port_forward()
+                    self._start_wda()
+                    if not self._wait_for_wda_ready(timeout=timeout):
+                        raise RuntimeError(f"WDA failed to restart within {timeout} seconds")
+
+                    logger.info(
+                        "WDA recovered successfully for device %s... (took %.2fs)",
+                        self.device_udid[:8],
+                        time.time() - start_time,
+                    )
+                    self._start_monitor()
+                    return True
+                except Exception as e:
+                    last_error = e
+                    logger.warning(
+                        "WDA recovery attempt %d/%d failed for device %s...: %s",
+                        attempt,
+                        attempts,
+                        self.device_udid[:8],
+                        e,
+                    )
+                    if attempt < attempts:
+                        time.sleep(self.RESTART_BACKOFF * attempt)
+
+            logger.error(
+                "WDA recovery failed for device %s after %d attempts: %s",
+                self.device_udid[:8],
+                attempts,
+                last_error,
             )
-            return
-
-        self._last_restart_time = current_time
-        logger.info(f"Attempting to restart WDA for device {self.device_udid[:8]}...")
-
-        try:
-            # 清理现有进程
-            self._cleanup_processes()
-
-            # 重新启动（不使用锁，因为我们在监控线程中）
-            start_time = time.time()
-
-            # 重启tunnel
-            if not self._tunnel_manager.start_tunnel(self.device_udid, force=True):
-                raise RuntimeError(f"Failed to restart tunnel for device {self.device_udid}")
-
-            # 重启端口转发
-            self._start_port_forward()
-            self._start_mjpeg_port_forward()
-
-            # 重启WDA
-            self._start_wda()
-            if not self._wait_for_wda_ready(timeout=30):
-                raise RuntimeError(f"WDA failed to restart within 30 seconds")
-
-            logger.info(
-                f"WDA restarted successfully for device {self.device_udid[:8]}... "
-                f"(took {time.time() - start_time:.2f}s)"
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to restart WDA for device {self.device_udid[:8]}...: {e}")
+            return False
 
     def _cleanup_processes(self):
         """清理所有子进程（不清理tunnel，由TunnelManager管理）"""
@@ -478,6 +521,13 @@ class GoIOSWDAServer:
             )
 
         logger.info(f"WDA process started (logs: {log_path})")
+
+    def _warmup_tunnel(self, attempt: int = 1):
+        """等待 tunnel 稳定，避免立即启动 WDA 失败"""
+        warmup = self.TUNNEL_WARMUP * max(1, attempt)
+        if warmup <= 0:
+            return
+        time.sleep(warmup)
 
     def _start_port_forward(self):
         """启动端口转发（WDA HTTP）"""
@@ -679,11 +729,7 @@ class GoIOSWDAServer:
 
     def is_alive(self) -> bool:
         """检查WDA是否运行中"""
-        return (
-            self._wda_process is not None and
-            self._wda_process.poll() is None and
-            self._is_port_open(self.wda_port, timeout=0.5)
-        )
+        return self._is_wda_running()
 
     def _cleanup_stale_processes(self):
         """清理残留的go-ios进程（针对当前设备和端口）"""

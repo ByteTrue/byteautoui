@@ -5,6 +5,8 @@
 """
 
 import logging
+import io
+import os
 import re
 import time
 from typing import Iterator, List, Optional, Tuple
@@ -19,6 +21,27 @@ from byteautoui.exceptions import AndroidDriverException
 from byteautoui.model import AppInfo, Node, Rect, ShellResponse, WindowSize
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_ANDROID_SCREENSHOT_TIMEOUT = 15.0  # seconds, fail fast for UI
+_DEFAULT_ANDROID_HIERARCHY_TIMEOUT = 20.0  # seconds, fail fast for UI
+_SCREENSHOT_TIMEOUT_ENV = "UIAUTODEV_ANDROID_SCREENSHOT_TIMEOUT"
+_HIERARCHY_TIMEOUT_ENV = "UIAUTODEV_ANDROID_HIERARCHY_TIMEOUT"
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r, fallback to %s", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("Invalid %s=%r (<=0), fallback to %s", name, raw, default)
+        return default
+    return value
+
 
 class ADBAndroidDriver(BaseDriver):
     def __init__(self, serial: str):
@@ -37,7 +60,15 @@ class ADBAndroidDriver(BaseDriver):
     def screenshot(self, id: int) -> Image.Image:
         if id > 0:
             raise AndroidDriverException("multi-display is not supported yet for uiautomator2")
-        return self.adb_device.screenshot(display_id=id)
+
+        timeout = _env_float(_SCREENSHOT_TIMEOUT_ENV, _DEFAULT_ANDROID_SCREENSHOT_TIMEOUT)
+        try:
+            png_bytes = self.adb_device.shell(["screencap", "-p"], encoding=None, timeout=timeout)
+            pil_img = Image.open(io.BytesIO(png_bytes))
+            return pil_img
+        except Exception as e:
+            logger.warning("adb screencap failed, fallback to adbutils screenshot: %s", e)
+            return self.adb_device.screenshot(display_id=id)
 
     def shell(self, command: str) -> ShellResponse:
         try:
@@ -73,12 +104,34 @@ class ADBAndroidDriver(BaseDriver):
         uiautomator dump errors:
         - ERROR: could not get idle state.
         """
-        try:
-            return self.adb_device.dump_hierarchy()
-        except adbutils.AdbError as e:
-            if "Killed" in str(e):
-                self.kill_app_process()
-            return self.adb_device.dump_hierarchy()
+        timeout = _env_float(_HIERARCHY_TIMEOUT_ENV, _DEFAULT_ANDROID_HIERARCHY_TIMEOUT)
+        target = "/data/local/tmp/uidump.xml"
+        cmd = f"rm -f {target}; uiautomator dump {target} && echo success"
+
+        last_error: Exception = RuntimeError("unreachable")
+        for attempt in range(2):
+            try:
+                output = self.adb_device.shell(cmd, timeout=timeout)
+                if "ERROR" in output or "success" not in output:
+                    raise adbutils.AdbError("uiautomator dump failed", output)
+
+                buf = b"".join(self.adb_device.sync.iter_content(target))
+                xml_data = buf.decode("utf-8", errors="replace")
+                if not xml_data.startswith("<?xml"):
+                    raise adbutils.AdbError("dump output is not xml", xml_data[:200])
+                return xml_data
+            except adbutils.AdbError as e:
+                last_error = e
+                # When uiautomator2 server is running, uiautomator dump may be killed.
+                if attempt == 0 and "Killed" in str(e):
+                    self.kill_app_process()
+                    continue
+                raise
+            except Exception as e:
+                last_error = e
+                raise
+
+        raise adbutils.AdbError(f"dump_hierarchy failed: {last_error}")
     
     def kill_app_process(self):
         logger.debug("Killing app_process")
