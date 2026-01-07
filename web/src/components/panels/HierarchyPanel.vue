@@ -187,16 +187,22 @@ function renderTreeLabel({ option }: { option: TreeOption }) {
     h('span', { class: 'tree-node-class' }, className),
   ]
 
-  // 添加 id 和/或 text/label（蓝色高亮）
+  // 添加 id/content-desc/text/label/name（蓝色高亮）
   if (node.resource_id) {
     const shortId = node.resource_id.split('/').pop() || node.resource_id
     elements.push(h('span', { class: 'tree-node-highlight' }, ` id=${shortId}`))
+  }
+  if (node.content_desc) {
+    elements.push(h('span', { class: 'tree-node-highlight' }, ` content-desc=${node.content_desc}`))
   }
   if (node.text) {
     elements.push(h('span', { class: 'tree-node-highlight' }, ` text=${node.text}`))
   }
   if (node.label) {
     elements.push(h('span', { class: 'tree-node-highlight' }, ` label=${node.label}`))
+  }
+  if (node.name) {
+    elements.push(h('span', { class: 'tree-node-highlight' }, ` name=${node.name}`))
   }
 
   return h('span', {}, elements)

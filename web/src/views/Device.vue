@@ -160,8 +160,8 @@ watch(
   () => props.platform,
   (platform) => {
     const validSelectors = platform === 'ios'
-      ? new Set(['label', 'class', 'class_and_label'])
-      : new Set(['id', 'text', 'class', 'class_and_text'])
+      ? new Set(['label', 'name', 'class', 'class_and_label', 'class_and_name'])
+      : new Set(['id', 'content-desc', 'class_and_content_desc', 'text', 'class', 'class_and_text'])
 
     if (!validSelectors.has(xpathSelector.value)) {
       xpathSelector.value = platform === 'ios' ? 'class_and_label' : 'id'
@@ -179,6 +179,8 @@ const generateXPath = (type: string, node: UINode | null): string => {
       return node.resource_id ? `//*[@resource-id="${node.resource_id}"]` : ''
     case 'content-desc':
       return node.content_desc ? `//*[@content-desc="${node.content_desc}"]` : ''
+    case 'name':
+      return node.name ? `//*[@name="${node.name}"]` : ''
     case 'text':
       return node.text ? `//*[@text="${node.text}"]` : ''
     case 'label':
@@ -186,6 +188,14 @@ const generateXPath = (type: string, node: UINode | null): string => {
     case 'class_and_text':
       return node.class_name && node.text
         ? `//${node.class_name}[@text="${node.text}"]`
+        : ''
+    case 'class_and_content_desc':
+      return node.class_name && node.content_desc
+        ? `//${node.class_name}[@content-desc="${node.content_desc}"]`
+        : ''
+    case 'class_and_name':
+      return node.class_name && node.name
+        ? `//${node.class_name}[@name="${node.name}"]`
         : ''
     case 'class_and_label':
       return node.class_name && node.label
@@ -220,9 +230,19 @@ const xpathSelectorOptions = computed(() => {
     return count
   }
 
-  // 按精确度排序：Android(id > class_and_text > class > text) / iOS(class_and_label > label > class)
+  // 按精确度排序：Android(id > class_and_content_desc > content-desc > class_and_text > class > text) / iOS(class_and_name > name > class_and_label > label > class)
   const options = props.platform === 'ios'
     ? [
+      {
+        label: 'class_and_name',
+        value: 'class_and_name',
+        xpath: generateXPath('class_and_name', node),
+      },
+      {
+        label: 'name',
+        value: 'name',
+        xpath: generateXPath('name', node),
+      },
       {
         label: 'class_and_label',
         value: 'class_and_label',
@@ -244,6 +264,16 @@ const xpathSelectorOptions = computed(() => {
         label: 'id',
         value: 'id',
         xpath: generateXPath('id', node),
+      },
+      {
+        label: 'class_and_content_desc',
+        value: 'class_and_content_desc',
+        xpath: generateXPath('class_and_content_desc', node),
+      },
+      {
+        label: 'content-desc',
+        value: 'content-desc',
+        xpath: generateXPath('content-desc', node),
       },
       {
         label: 'class_and_text',
@@ -411,6 +441,7 @@ function getRawProperties(node: UINode): Record<string, string> {
   if (node.index !== undefined) raw.index = String(node.index)
   if (node.text) raw.text = node.text
   if (node.label) raw.label = node.label
+  if (node.name) raw.name = node.name
   if (node.resource_id) raw['resource-id'] = node.resource_id
   if (node.class_name) raw.class = node.class_name
   if (node.package) raw.package = node.package
@@ -453,6 +484,7 @@ const propertyDetails = computed<PropertyDetail[]>(() => {
   if (node.index !== undefined) details.push({ label: 'index', value: node.index })
   if (node.text) details.push({ label: 'text', value: node.text })
   if (node.label) details.push({ label: 'label', value: node.label })
+  if (node.name) details.push({ label: 'name', value: node.name })
   if (node.resource_id) details.push({ label: 'resource-id', value: node.resource_id })
   if (node.class_name) details.push({ label: 'class', value: node.class_name })
   if (node.package) details.push({ label: 'package', value: node.package })
