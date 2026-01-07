@@ -7,16 +7,14 @@ describe('recording types', () => {
   })
 
   it('BaseAction 包含失败控制字段', () => {
-    expectTypeOf<BaseAction['onExecuteFailure']>().toEqualTypeOf<FailureBehavior>()
-    expectTypeOf<BaseAction['onAssertFailure']>().toEqualTypeOf<FailureBehavior>()
+    expectTypeOf<BaseAction['onFailure']>().toEqualTypeOf<FailureBehavior>()
   })
 
   it('RecordingConfig 支持 globalFailureControl', () => {
     type Global = NonNullable<RecordingConfig['globalFailureControl']>
     expectTypeOf<Global>().toEqualTypeOf<{
       enabled: boolean
-      onExecuteFailure: FailureBehavior
-      onAssertFailure: FailureBehavior
+      onFailure: FailureBehavior
     }>()
   })
 })

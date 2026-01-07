@@ -419,7 +419,7 @@ export function useRecorder(
     // 基于每个action的waitAfter重新计算relativeTime
     let currentRelativeTime = 0
 
-    const recalculated = reorderedActions.map((action, index) => {
+    const recalculated = reorderedActions.map((action) => {
       const newAction = { ...action, relativeTime: currentRelativeTime }
       // 累加当前action的waitAfter作为下一个action的relativeTime
       currentRelativeTime += action.waitAfter || 500 // 默认500ms间隔

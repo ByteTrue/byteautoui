@@ -15,13 +15,18 @@ import type {
  * 自定义断言失败错误，包含截图信息
  */
 class AssertionFailureError extends Error {
+  screenshot?: string
+  details?: Record<string, unknown>
+
   constructor(
     message: string,
-    public screenshot?: string,
-    public details?: Record<string, unknown>
+    screenshot?: string,
+    details?: Record<string, unknown>
   ) {
     super(message)
     this.name = 'AssertionFailureError'
+    this.screenshot = screenshot
+    this.details = details
   }
 }
 
@@ -291,7 +296,7 @@ export function usePlayer(
         // 如果断言失败，抛出包含截图的自定义错误
         if (!result.success) {
           const errorMsg = `断言失败: ${result.message}`
-          throw new AssertionFailureError(errorMsg, result.screenshot, result.details)
+          throw new AssertionFailureError(errorMsg, result.screenshot, result.details as Record<string, unknown> | undefined)
         }
 
         break

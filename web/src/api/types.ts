@@ -167,7 +167,9 @@ export function convertRawNode(raw: RawUINode): UINode {
     visible_to_user: props['visible-to-user'] === 'true',
     bounds: boundsArray,
     rect: raw.rect || undefined,
-    properties: props,  // 保留原始属性供 XPath 生成使用
+    properties: Object.fromEntries(
+      Object.entries(props).filter(([, v]) => v !== undefined)
+    ) as Record<string, string>,  // 过滤 undefined 值
     children: raw.children?.map(child => convertRawNode(child)),
   }
 }

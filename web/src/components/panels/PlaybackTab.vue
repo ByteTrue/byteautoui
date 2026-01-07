@@ -111,7 +111,7 @@
           v-for="(action, index) in player.recording.value.actions"
           :key="action.id"
           class="step-item"
-          :class="getStepClass(action, index)"
+          :class="getStepClass(action, Number(index))"
         >
           <span class="step-index">{{ Number(index) + 1 }}</span>
           <n-tag :type="getActionTypeColor(action.type)" size="small">
@@ -146,8 +146,6 @@ import {
   NEmpty,
   NAlert,
   NSwitch,
-  NSelect,
-  NDivider,
   type TreeOption,
 } from 'naive-ui'
 import {
@@ -162,7 +160,7 @@ import {
   SettingsOutline,
 } from '@vicons/ionicons5'
 import type { RecordingMetadata } from '@/api/recording'
-import type { RecordedAction, StepResult, FailureBehavior } from '@/types/recording'
+import type { RecordedAction } from '@/types/recording'
 import {
   formatFileSize,
   formatDate,

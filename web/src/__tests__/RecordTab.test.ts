@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import RecordTab from '@/components/panels/RecordTab.vue'
 import { createMockRecorder, createMockPlayer, mockT } from './ui-test-utils'
 import { NTooltip, NTag } from 'naive-ui'
-import type { RecordedAction, StepResult } from '@/types/recording'
+import type { RecordedAction } from '@/types/recording'
 
 describe('RecordTab.vue', () => {
   let recorder: ReturnType<typeof createMockRecorder>
@@ -28,7 +28,9 @@ describe('RecordTab.vue', () => {
 
   it('shows failure badge when step has non-default behavior', async () => {
     // Modify action to have 'continue' behavior
-    recorder.actions.value[0].onFailure = 'continue'
+    const action = recorder.actions.value[0]
+    expect(action).toBeDefined()
+    action!.onFailure = 'continue'
 
     const wrapper = mount(RecordTab, {
       props: {

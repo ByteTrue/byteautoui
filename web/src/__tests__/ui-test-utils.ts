@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { vi } from 'vitest'
-import type { RecordedAction, RecordingConfig, StepResult } from '@/types/recording'
+import type { RecordedAction, StepResult } from '@/types/recording'
 
 // Mock useRecorder
 // Mock useRecorder
@@ -38,8 +38,7 @@ export function createMockPlayer() {
     config: {
       globalFailureControl: {
         enabled: false,
-        onExecuteFailure: 'stop',
-        onAssertFailure: 'stop'
+        onFailure: 'stop' as 'stop' | 'continue'
       }
     },
     actions: [] as RecordedAction[]

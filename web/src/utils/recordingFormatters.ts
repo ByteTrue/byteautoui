@@ -135,8 +135,11 @@ export function formatActionParams(action: RecordedAction): string {
         return '返回'
       case 'home':
         return '主页'
-      default:
-        return action.params ? JSON.stringify(action.params) : action.type || '未知操作'
+      default: {
+        // 处理未知的 action type
+        const unknownAction = action as RecordedAction & { params?: unknown; type?: string }
+        return unknownAction.params ? JSON.stringify(unknownAction.params) : unknownAction.type || '未知操作'
+      }
     }
   } catch (error) {
     console.error('formatActionParams error:', error, action)

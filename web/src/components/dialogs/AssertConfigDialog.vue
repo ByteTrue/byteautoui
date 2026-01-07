@@ -107,7 +107,6 @@ import {
   NSwitch,
   NInputNumber,
   NInput,
-  NSelect,
   NDivider,
   NTooltip,
 } from 'naive-ui'
@@ -217,6 +216,8 @@ function toggleExpect(index: number) {
   }
 }
 
+/*
+// 格式化条件文本（供将来使用）
 function formatCondition(condition: AssertCondition): string {
   if (condition.type === 'element') {
     const expectText = condition.expect === 'exists' ? '存在' : '不存在'
@@ -227,6 +228,7 @@ function formatCondition(condition: AssertCondition): string {
     return `${name} ${expectText}`
   }
 }
+*/
 
 /**
  * 获取条件选择器部分（不包含存在/不存在）

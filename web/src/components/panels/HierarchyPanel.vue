@@ -221,9 +221,6 @@ async function searchInHierarchy() {
     await store.refreshHierarchy()
 
     const searchValue = hierarchySearch.value.trim()
-    const screenSize = store.hierarchy
-      ? { width: store.hierarchy.width, height: store.hierarchy.height }
-      : undefined
 
     const result = await sendCommand(props.platform, props.serial, 'findElements', {
       by: searchType.value,
@@ -234,7 +231,7 @@ async function searchInHierarchy() {
     if (result && typeof result === 'object' && 'value' in result) {
       const responseData = result as { count: number; value: RawUINode[] }
       // 转换 RawUINode 为 UINode
-      searchResults.value = responseData.value.map(node => convertRawNode(node, screenSize))
+      searchResults.value = responseData.value.map(node => convertRawNode(node))
 
       if (responseData.count === 0) {
         message.warning(t.value.noResults)
@@ -246,7 +243,7 @@ async function searchInHierarchy() {
       }
     } else if (Array.isArray(result)) {
       // 转换 RawUINode 为 UINode
-      searchResults.value = (result as RawUINode[]).map(node => convertRawNode(node, screenSize))
+      searchResults.value = (result as RawUINode[]).map(node => convertRawNode(node))
       if (result.length === 1) {
         selectSearchResult(searchResults.value[0]!)
       } else {

@@ -149,9 +149,10 @@ describe('ActionEditDialog.vue', () => {
     await wrapper.find('.save-btn').trigger('click')
 
     expect(wrapper.emitted('save')).toBeTruthy()
-    const args = wrapper.emitted('save')![0]
-    expect(args[0]).toBe('1')
-    expect(args[1]).toEqual(expect.objectContaining({
+    const args = wrapper.emitted('save')?.[0]
+    expect(args).toBeDefined()
+    expect(args![0]).toBe('1')
+    expect(args![1]).toEqual(expect.objectContaining({
       onFailure: 'continue' // 应该输出新的统一字段
     }))
   })
@@ -187,8 +188,9 @@ describe('ActionEditDialog.vue', () => {
     await wrapper.find('.save-btn').trigger('click')
 
     expect(wrapper.emitted('save')).toBeTruthy()
-    const args = wrapper.emitted('save')![0]
-    expect(args[1]).toEqual(expect.objectContaining({
+    const args = wrapper.emitted('save')?.[0]
+    expect(args).toBeDefined()
+    expect(args![1]).toEqual(expect.objectContaining({
       waitAfter: 500
     }))
   })

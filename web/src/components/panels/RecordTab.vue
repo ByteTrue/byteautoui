@@ -149,7 +149,7 @@ import {
   CloseCircleOutline,
 } from '@vicons/ionicons5'
 import draggable from 'vuedraggable'
-import type { RecordedAction, StepResult, FailureBehavior } from '@/types/recording'
+import type { RecordedAction, StepResult } from '@/types/recording'
 import {
   formatDuration,
   formatWaitAfter,
