@@ -66,6 +66,7 @@ const message = useMessage()
 const store = useDeviceStore()
 const themeStore = useThemeStore()
 const i18nStore = useI18nStore()
+const selectedNode = computed(() => store.selectedNode)
 
 // ActionsPanel引用
 const actionsPanelRef = ref<InstanceType<typeof ActionsPanel> | null>(null)
@@ -299,6 +300,29 @@ const xpathSelectorOptions = computed(() => {
   }))
 })
 
+const lastAutoSwitch = ref<{ nodeKey: string; type: string } | null>(null)
+
+// 当前类型无可用 XPath 时，自动切换到可用项
+watch(
+  () => [selectedNode.value, xpathSelector.value, xpathSelectorOptions.value] as const,
+  ([node, currentType, options]) => {
+    if (!node || options.length === 0) return
+    const current = options.find(opt => opt.value === currentType)
+    if (current?.xpath) return
+    const fallback = options.find(opt => opt.xpath)
+    if (fallback && fallback.value !== currentType) {
+      const nodeKey = node.key || 'unknown'
+      const last = lastAutoSwitch.value
+      if (!last || last.nodeKey !== nodeKey || last.type !== fallback.value) {
+        message.info(`已自动切换到可用 XPath：${fallback.label}`, { duration: 1200 })
+        lastAutoSwitch.value = { nodeKey, type: fallback.value }
+      }
+      xpathSelector.value = fallback.value
+    }
+  },
+  { immediate: true }
+)
+
 // Current XPath based on selector
 const currentXPath = computed(() => generateXPath(xpathSelector.value, selectedNode.value))
 
@@ -422,8 +446,6 @@ const screenSize = computed(() => {
     height: size?.height || 0,
   }
 })
-const selectedNode = computed(() => store.selectedNode)
-
 // Watch selected node and xpath selector changes to update same class siblings
 watch(
   () => [selectedNode.value, xpathSelector.value] as const,
@@ -709,22 +731,52 @@ async function tapElement() {
   }
 
   try {
-    const xpath = currentXPath.value || selectedNode.value.xpath
+    const candidates = xpathSelectorOptions.value
+      .filter(opt => opt.xpath)
 
-    if (xpath) {
-      await sendCommand(props.platform, props.serial, 'clickElement', {
-        by: 'xpath',
-        value: xpath,
-      })
-      message.success('已通过 XPath 点击元素')
+    let clickedByXPath = false
+    let usedCandidate: { value: string; label: string; xpath: string } | null = null
+
+    if (candidates.length > 0) {
+      const current = candidates.find(opt => opt.value === xpathSelector.value)
+      const ordered = current
+        ? [current, ...candidates.filter(opt => opt.value !== current.value)]
+        : candidates
+
+      for (const candidate of ordered) {
+        try {
+          await sendCommand(props.platform, props.serial, 'clickElement', {
+            by: 'xpath',
+            value: candidate.xpath,
+          })
+          clickedByXPath = true
+          usedCandidate = candidate
+          break
+        } catch (error) {
+          // 尝试下一个候选 XPath
+        }
+      }
+    }
+
+    if (clickedByXPath && usedCandidate) {
+      if (usedCandidate.value !== xpathSelector.value) {
+        xpathSelector.value = usedCandidate.value
+        message.info(`当前 XPath 定位失败，已改用 ${usedCandidate.label} 点击元素`, { duration: 1200 })
+      } else {
+        message.success('已通过 XPath 点击元素')
+      }
     } else {
-      // 无 XPath 时回退到坐标点击
+      // 无可用 XPath 或 XPath 全部失败时回退到坐标点击
       const bounds = toAbsoluteBounds(selectedNode.value.bounds)
       const [x1, y1, x2, y2] = bounds
       const centerX = Math.round((x1 + x2) / 2)
       const centerY = Math.round((y1 + y2) / 2)
       await tap(props.platform, props.serial, centerX, centerY)
-      message.success(`点击元素: (${centerX}, ${centerY})`)
+      if (candidates.length > 0) {
+        message.warning(`XPath 点击失败，已改用坐标点击: (${centerX}, ${centerY})`)
+      } else {
+        message.success(`点击元素: (${centerX}, ${centerY})`)
+      }
     }
 
     // 如果正在录制，记录操作
