@@ -270,10 +270,11 @@ def execute_combined_assertion(
 
     # 验证 conditions（理论上 Pydantic 已经验证过，这里是双重保险）
     if not conditions:
-        raise AssertionError(
-            "BUG: 条件列表为空（应该在 Pydantic 验证时被拒绝）。"
-            "如果看到这个错误，说明验证逻辑有漏洞。"
-        )
+        return False, "断言条件不能为空", {
+            "reason": "条件列表为空",
+            "operator": operator,
+            "conditions": [],
+        }
 
     # 解析等待配置
     enabled = wait_config.get('enabled', False) if wait_config else False

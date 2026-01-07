@@ -9,7 +9,7 @@
 import enum
 from typing import List, Optional, Union, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from byteautoui.model import Node
 
@@ -189,10 +189,12 @@ class WaitConfig(BaseModel):
         # 注意：无法在这里访问 timeout 值，需要使用 model_validator
         return v
 
-    def model_post_init(self, __context):
+    @model_validator(mode='after')
+    def validate_timeout_interval(self):
         """验证 interval 不能大于 timeout"""
         if self.interval > self.timeout:
             raise ValueError(f'interval({self.interval}) 不能大于 timeout({self.timeout})')
+        return self
 
 
 class AssertElementRequest(BaseModel):
